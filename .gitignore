@@ -1,0 +1,14 @@
+node_modules/
+dist/
+server/data/
+.env
+.env.*
+!.env.example
+!.env.practice
+*.db
+*.db-*
+*.log
+.DS_Store
+.omc/*
+!.omc/skills/
+*/**/.omc/

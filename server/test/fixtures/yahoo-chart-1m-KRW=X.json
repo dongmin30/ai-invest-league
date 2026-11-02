@@ -1,0 +1,149 @@
+{
+ "chart": {
+  "result": [
+   {
+    "meta": {
+     "currency": "KRW",
+     "symbol": "KRW=X",
+     "exchangeName": "CCY",
+     "fullExchangeName": "CCY",
+     "instrumentType": "CURRENCY",
+     "firstTradeDate": 1070236800,
+     "regularMarketTime": 1793417451,
+     "hasPrePostMarketData": false,
+     "gmtoffset": 0,
+     "timezone": "GMT",
+     "exchangeTimezoneName": "Europe/London",
+     "regularMarketPrice": 1335.1,
+     "regularMarketChangePercent": -0.2905,
+     "fulldayPrice": 1335.1,
+     "fulldayChange": -3.89,
+     "fulldayChangePercent": -0.2905,
+     "fiftyTwoWeekHigh": 1587.7,
+     "fiftyTwoWeekLow": 1319.52,
+     "regularMarketDayHigh": 1335.1,
+     "regularMarketDayLow": 1335.1,
+     "regularMarketVolume": 0,
+     "longName": "USD/KRW",
+     "shortName": "USD/KRW",
+     "chartPreviousClose": 1338.99,
+     "previousClose": 1338.99,
+     "scale": 4,
+     "priceHint": 4,
+     "currentTradingPeriod": {
+      "pre": {
+       "timezone": "GMT",
+       "start": 1793318400,
+       "end": 1793318400,
+       "gmtoffset": 0
+      },
+      "regular": {
+       "timezone": "GMT",
+       "start": 1793318400,
+       "end": 1793404740,
+       "gmtoffset": 0
+      },
+      "post": {
+       "timezone": "GMT",
+       "start": 1793404740,
+       "end": 1793404740,
+       "gmtoffset": 0
+      }
+     },
+     "tradingPeriods": [
+      [
+       {
+        "timezone": "GMT",
+        "start": 1793318400,
+        "end": 1793404740,
+        "gmtoffset": 0
+       }
+      ]
+     ],
+     "dataGranularity": "1m",
+     "range": "1d",
+     "validRanges": [
+      "1d",
+      "5d",
+      "1mo",
+      "3mo",
+      "6mo",
+      "1y",
+      "2y",
+      "5y",
+      "10y",
+      "ytd",
+      "max"
+     ]
+    },
+    "timestamp": [
+     1793393940,
+     1793397960,
+     1793398080,
+     1793404440,
+     1793404500,
+     1793404560,
+     1793404620,
+     1793404680
+    ],
+    "indicators": {
+     "quote": [
+      {
+       "open": [
+        1333.47998046875,
+        1333.43994140625,
+        1333.43994140625,
+        null,
+        null,
+        null,
+        null,
+        null
+       ],
+       "high": [
+        1333.47998046875,
+        1333.43994140625,
+        1333.43994140625,
+        null,
+        null,
+        null,
+        null,
+        null
+       ],
+       "low": [
+        1332.6300048828125,
+        1333.43994140625,
+        1333.43994140625,
+        null,
+        null,
+        null,
+        null,
+        null
+       ],
+       "close": [
+        1333.43994140625,
+        1333.43994140625,
+        1333.43994140625,
+        null,
+        null,
+        null,
+        null,
+        null
+       ],
+       "volume": [
+        0,
+        0,
+        0,
+        null,
+        null,
+        null,
+        null,
+        null
+       ]
+      }
+     ]
+    }
+   }
+  ],
+  "error": null
+ }
+}

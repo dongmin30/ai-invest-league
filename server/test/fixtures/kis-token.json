@@ -1,0 +1,6 @@
+{
+  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.fixture-token",
+  "access_token_token_expired": "2026-10-18 09:00:00",
+  "token_type": "Bearer",
+  "expires_in": 86400
+}
