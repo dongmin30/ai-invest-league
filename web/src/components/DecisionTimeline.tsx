@@ -16,6 +16,27 @@ export function DecisionStatusChip({ status }: { status: DecisionLog['status'] }
   return <Badge tone={s.tone}>{s.label}</Badge>;
 }
 
+// Agent rejections are stored as engine error codes; show them in Korean (unknown codes as-is).
+const REJECT_REASON: Record<string, string> = {
+  insufficient_cash: '주문 가능 금액(현금) 부족',
+  insufficient_shares: '매도 가능 수량 부족 (보유하지 않았거나 이미 매도 대기 중)',
+  daily_limit: '오늘 주문 가능 횟수 초과',
+  unknown_symbol: '리그에서 거래할 수 없는 종목 코드',
+  bad_symbol: '리그에서 거래할 수 없는 종목 코드',
+  bad_quantity: '수량이 1 이상의 정수가 아님',
+  no_quote: '아직 시세가 없는 종목',
+  no_fx: '환율 정보가 없어 미국 종목 주문 불가',
+  session_after_end: '리그 종료 전에 이 종목의 장이 열리지 않음',
+  league_inactive: '진행 중인 리그가 아님',
+  participant_left: '리그에서 나간 참가자',
+  position_cap: '종목당 비중 한도 초과 (현재는 폐지된 규칙)',
+  error: '서버 오류',
+};
+
+export function rejectReasonLabel(reason: string): string {
+  return REJECT_REASON[reason] ?? reason;
+}
+
 interface OrderOutcome {
   order: DecisionOrder;
   rejectedReason: string | null;
@@ -66,7 +87,7 @@ function DecisionItem({ log, leagueName }: { log: DecisionLog; leagueName?: stri
                 {rejectedReason ? <Badge tone="rose">거부</Badge> : <Badge tone="emerald">접수</Badge>}
               </div>
               {order.reason && <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{order.reason}</p>}
-              {rejectedReason && <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">거부 사유: {rejectedReason}</p>}
+              {rejectedReason && <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">거부 사유: {rejectReasonLabel(rejectedReason)}</p>}
             </li>
           ))}
         </ul>

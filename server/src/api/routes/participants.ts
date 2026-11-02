@@ -32,7 +32,13 @@ function loadParticipant(id: number): ParticipantRow {
   return participant;
 }
 
-/** Portfolios and orders are visible to their owner and, for AI participants, to everyone who can see the league. */
+/** Holdings are part of the league standings: anyone who can see the league may read any participant's portfolio. */
+function assertPortfolioReadable(user: User, participant: ParticipantRow): void {
+  if (participant.user_id === user.id) return;
+  loadVisibleLeague(user, participant.league_id);
+}
+
+/** Orders are visible to their owner and, for AI participants, to everyone who can see the league. */
 function assertReadable(user: User, participant: ParticipantRow): void {
   if (participant.user_id === user.id) return;
   if (participant.agent_id !== null) {
@@ -50,7 +56,7 @@ export async function participantRoutes(app: FastifyInstance): Promise<void> {
   app.get('/participants/:id/portfolio', async (req) => {
     const user = requireUser(req);
     const participant = loadParticipant(IdParams.parse(req.params).id);
-    assertReadable(user, participant);
+    assertPortfolioReadable(user, participant);
     return getPortfolio(participant.id);
   });
 

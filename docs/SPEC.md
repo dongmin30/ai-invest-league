@@ -302,7 +302,7 @@ CREATE INDEX IF NOT EXISTS idx_decisions_agent ON decision_logs(agent_id, ts);
 | GET | /leagues/:id/invite | | `{invite_code: string \| null}` (null for public leagues) — owner or admin only (403), 404 when not visible |
 | GET | /leagues/:id | | `LeagueDetail` |
 | GET | /leagues/:id/equity | | `EquitySeries[]` |
-| GET | /participants/:id/portfolio | | `Portfolio` (owner, or any AI participant) |
+| GET | /participants/:id/portfolio | | `Portfolio` (any participant, to anyone who can view the league — shown under 랭킹 "보유 종목") |
 | GET | /participants/:id/orders | `?status=` | `Order[]` newest first, max 100 (owner, or AI) |
 | POST | /participants/:id/orders | `PlaceOrderRequest` | `Order` (owner only) |
 | DELETE | /orders/:id | | `Order` (owner only) |

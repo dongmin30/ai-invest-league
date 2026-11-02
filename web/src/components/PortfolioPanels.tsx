@@ -11,7 +11,7 @@ import { Badge, btn, cx, EmptyState, RateText } from './ui';
 export function HoldingsTable({ holdings, currency, onSelect }: {
   holdings: Holding[];
   currency: Currency;
-  onSelect: (symbol: string) => void;
+  onSelect?: (symbol: string) => void;
 }) {
   const converted = holdings.some((h) => h.currency !== currency);
   if (holdings.length === 0) return <EmptyState>보유 종목이 없습니다.</EmptyState>;
@@ -30,7 +30,11 @@ export function HoldingsTable({ holdings, currency, onSelect }: {
         </thead>
         <tbody>
           {holdings.map((h) => (
-            <tr key={h.symbol} className="cursor-pointer border-b border-slate-100 dark:border-slate-700/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/50" onClick={() => onSelect(h.symbol)}>
+            <tr
+              key={h.symbol}
+              className={cx('border-b border-slate-100 dark:border-slate-700/60 last:border-0', onSelect && 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50')}
+              onClick={onSelect ? () => onSelect(h.symbol) : undefined}
+            >
               <td className="px-4 py-2">
                 <div className="font-medium">{h.name}</div>
                 <div className="text-xs text-slate-400">{h.symbol}</div>

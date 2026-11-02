@@ -308,6 +308,7 @@ describe('private league visibility', () => {
     expectApiError(await get(bob, `/api/leagues/${priv.id}`), 404, 'not_found');
     expectApiError(await get(bob, `/api/leagues/${priv.id}/equity`), 404, 'not_found');
     expectApiError(await get(bob, `/api/participants/${aiPid}/portfolio`), 404, 'not_found');
+    expectApiError(await get(bob, `/api/participants/${priv.my_participant_id}/portfolio`), 404, 'not_found');
     expectApiError(await get(bob, `/api/participants/${aiPid}/orders`), 404, 'not_found');
     expectApiError(await get(bob, `/api/stream?league_id=${priv.id}`), 404, 'not_found');
     const agentForBob = (await get(bob, `/api/agents/${agents.baseline}`)).json<AgentDetail>();
@@ -510,14 +511,14 @@ describe('trading', () => {
     expectApiError(await order(alice, pid, { symbol: '005930', side: 'HOLD', type: 'MARKET', quantity: 1 }), 400, 'validation');
   });
 
-  it("forbids ordering on or reading someone else's participant, but allows reading AI participants", async () => {
+  it("forbids ordering on someone else's participant or reading their orders, but shows every portfolio in the league", async () => {
     const league = await createLeague(alice);
     const alicePid = league.my_participant_id!;
     const bobPid = await join(bob, league.id);
     const bobOrder = (await order(bob, bobPid, { symbol: '005930', side: 'BUY', type: 'MARKET', quantity: 1 })).json<Order>();
 
     expectApiError(await order(alice, bobPid, { symbol: '005930', side: 'BUY', type: 'MARKET', quantity: 1 }), 403, 'forbidden');
-    expectApiError(await get(alice, `/api/participants/${bobPid}/portfolio`), 403, 'forbidden');
+    expect((await get(alice, `/api/participants/${bobPid}/portfolio`)).statusCode).toBe(200);
     expectApiError(await get(alice, `/api/participants/${bobPid}/orders`), 403, 'forbidden');
     expectApiError(await app.inject({ method: 'DELETE', url: `/api/orders/${bobOrder.id}`, cookies: alice.cookies }), 403, 'forbidden');
     expect((await get(alice, `/api/participants/${alicePid}/portfolio`)).statusCode).toBe(200);
