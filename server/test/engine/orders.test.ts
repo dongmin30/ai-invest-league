@@ -184,20 +184,20 @@ describe('daily limit', () => {
   });
 });
 
-describe('position cap', () => {
+describe('no per-symbol position cap', () => {
   beforeEach(() => resetEngineState());
   afterEach(() => restoreEngineState());
 
-  it('rejects a BUY that would push one symbol above 40% of equity, counting holdings and pending buys', () => {
+  it('lets one symbol take almost all equity; only available cash limits a BUY', () => {
     const { participantId } = activeLeague();
     feed(quote(SAMSUNG, 70_000));
-    // cap = 4,000,000: 57 × 70,000 = 3,990,000 fits, 58 does not
-    expectCode(() => buy(participantId, SAMSUNG, 58), 'position_cap');
-    buy(participantId, SAMSUNG, 30);
-    expectCode(() => buy(participantId, SAMSUNG, 28), 'position_cap');
-    buy(participantId, SAMSUNG, 27);
+    // 140 × 70,000 = 9,800,000 + 0.015% fee 1,470 = 9,801,470 ≤ 10,000,000 (98% in one symbol).
+    buy(participantId, SAMSUNG, 100);
+    expect(buy(participantId, SAMSUNG, 40).status).toBe('pending');
     fillAt(SAMSUNG, 70_000);
-    expectCode(() => buy(participantId, SAMSUNG, 1), 'position_cap');
+    // 198,530 left: 2 more (140,021) fit, then 1 more (70,011) exceeds the remaining 58,509.
+    expect(buy(participantId, SAMSUNG, 2).status).toBe('pending');
+    expectCode(() => buy(participantId, SAMSUNG, 1), 'insufficient_cash');
   });
 });
 

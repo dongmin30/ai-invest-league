@@ -84,14 +84,12 @@ describe('baseline strategy', () => {
     expect(second.orders.map((o) => o.symbol)).toEqual(pool.slice(3, 6).map((c) => c.symbol));
   });
 
-  it('respects the position cap and skips symbols without a price', () => {
+  it('skips symbols without a price', () => {
     const candidates = [candidate('nope', null, { volume: 1e9 }), candidate('big', 10_000, { volume: 1e6 })];
-    const input = pureInput({ candidates });
-    input.rules.max_position_pct = 0.05;
-    const { orders } = decideBaseline(input);
+    const { orders } = decideBaseline(pureInput({ candidates }));
     expect(orders).toHaveLength(1);
     expect(orders[0]!.symbol).toBe('big');
-    expect(orders[0]!.quantity * 10_000).toBeLessThanOrEqual(0.05 * 10_000_000);
+    expect(orders[0]!.quantity * 10_000).toBeLessThanOrEqual(10_000_000);
   });
 
   it('counts pending buys as owned and never spends more than available cash', () => {

@@ -66,7 +66,6 @@ export function buildPrompt(input: DecisionInput): { system: string; user: strin
   const { agent, league, rules, portfolio, pendingOrders, candidates } = input;
   const unified = league.market === 'ALL';
   const remaining = Math.max(0, portfolio.max_orders_per_day - portfolio.orders_today);
-  const positionCap = rules.max_position_pct * portfolio.equity;
   const leveraged = candidates.filter((c) => c.leverage !== 1);
   const taxNote = league.market === 'KR' && rules.tax_rate > 0 ? ', ETF 매도는 증권거래세 면제' : '';
 
@@ -83,7 +82,6 @@ export function buildPrompt(input: DecisionInput): { system: string; user: strin
           `- 세금: 매도 금액의 ${pct(rules.tax_rate)} (매도 시에만${taxNote})`,
         ]),
     `- 하루 주문 한도: ${portfolio.max_orders_per_day}건 (거절되지 않은 주문은 모두 포함, 오늘 남은 주문 ${remaining}건${unified ? '; 하루는 08:00 KST부터 한국 장과 이어지는 미국 장까지' : ''})`,
-    `- 종목당 비중 한도: 총자산의 ${pct(rules.max_position_pct)} (보유 수량 + 대기 중인 매수 수량 기준${unified ? ', 미국 종목은 환율 중간값으로 원화 환산' : ''})`,
     '- 공매도, 신용, 레버리지는 불가합니다(레버리지·인버스 ETF는 일반 종목처럼 현금으로 매수할 수 있습니다). 매도는 보유 수량(대기 중인 매도 제외) 이하만, 매수는 수수료를 포함해 가용 현금 이내에서만 가능합니다.',
     '- 모든 주문은 시장가이며 수량은 1 이상의 정수입니다. 장이 닫혀 있으면 다음 장이 열린 뒤 첫 시세에 체결됩니다.',
     `- 이 판단은 약 ${league.decision_interval_min}분마다 반복됩니다. 후보 목록은 리그 종목 중 이번 판단용으로 고른 일부(보유·대기 주문 종목, 대표 지수 ETF, 등락률·거래대금 상위)입니다. 리그 종목 코드가 아니면 거절되며, 시세가 있는 후보 중에서 고르기를 권장합니다.`,
@@ -104,7 +102,6 @@ export function buildPrompt(input: DecisionInput): { system: string; user: strin
     available_cash: portfolio.available_cash,
     equity: portfolio.equity,
     return_rate: Number(portfolio.return_rate.toFixed(4)),
-    position_cap_value: Number(positionCap.toFixed(2)),
     orders_today: portfolio.orders_today,
     orders_remaining_today: remaining,
     holdings: portfolio.holdings.map((h) => ({

@@ -6,9 +6,9 @@ import { isMarketOpen, leagueTradeDate, nextOpen } from '../market/calendar';
 import { appliedFx, getFx } from '../market/fx';
 import { getQuote } from '../market/quoteCache';
 import { getSymbol } from '../market/symbols';
-import { convertsFx, ratesFor, roundMoney, tradeCost } from './fees';
+import { convertsFx, ratesFor, tradeCost } from './fees';
 import { EngineError } from './errors';
-import { availableCash, equityOf, ordersOnDate } from './portfolio';
+import { availableCash, ordersOnDate } from './portfolio';
 import { getHolding, getLeagueRow, getOrderRow, getParticipantRow, sql, toOrder, type OrderRow } from './store';
 
 export { EngineError } from './errors';
@@ -66,7 +66,6 @@ export function placeOrder(participantId: number, req: PlaceOrderRequest, source
     }
     const fx = convertsFx(league.market, info.symbol) ? getFx(at) : undefined;
     if (fx === null) throw new EngineError('no_fx', '환율 정보가 아직 없어 미국 종목을 주문할 수 없습니다.');
-    const midFx = fx?.rate ?? 1;
     const refFx = fx ? (req.side === 'BUY' ? appliedFx(fx.rate, 'BUY', league.fx_spread) : fx.rate) : null;
 
     const tradeDate = leagueTradeDate(league.market, at);
@@ -80,16 +79,6 @@ export function placeOrder(participantId: number, req: PlaceOrderRequest, source
       const cost = tradeCost(league.currency, 'BUY', req.quantity, unitPrice, fee_rate, 0, refFx ?? 1).cash;
       if (cost > availableCash(participantId)) {
         throw new EngineError('insufficient_cash', '주문 가능 금액이 부족합니다.');
-      }
-      const heldQty = getHolding(participantId, info.symbol)?.quantity ?? 0;
-      const positionQty = heldQty + pendingQuantity(participantId, info.symbol, 'BUY') + req.quantity;
-      const positionValue = roundMoney(league.currency, positionQty * quote.price * midFx);
-      const cap = roundMoney(league.currency, league.max_position_pct * equityOf(participantId));
-      if (positionValue > cap) {
-        throw new EngineError(
-          'position_cap',
-          `한 종목의 비중은 총자산의 ${Math.round(league.max_position_pct * 100)}%를 넘을 수 없습니다.`,
-        );
       }
     } else {
       const heldQty = getHolding(participantId, info.symbol)?.quantity ?? 0;

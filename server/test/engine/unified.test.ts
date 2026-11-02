@@ -70,7 +70,7 @@ describe('placeOrder in an ALL league', () => {
     expect(buy(participantId, SAMSUNG, 1).status).toBe('pending');
   });
 
-  it('reserves US BUY cash at the spread-applied rate (ref_fx) and caps the position at the mid', () => {
+  it('reserves US BUY cash at the spread-applied rate (ref_fx) and no longer caps the position', () => {
     setClock(US_OPEN + MIN);
     const { participantId } = activeLeague('ALL');
     setFxRate(1300);
@@ -79,9 +79,8 @@ describe('placeOrder in an ALL league', () => {
     // 10 × $200 × 1301.3 = 2,602,600 + 0.1% fee 2,603.
     expect(getOrderRow(order.id)).toMatchObject({ ref_fx: 1301.3, ref_price: 200, trade_date: '2026-10-19' });
     expect(availableCash(participantId)).toBe(START - 2_605_203);
-    // 40% of 10,000,000 = 4,000,000: 16 more shares would be (10 + 16) × 200 × 1300 = 6,760,000 at the mid.
-    expect(() => buy(participantId, APPLE, 6)).toThrow(expect.objectContaining({ code: 'position_cap' }));
-    expect(buy(participantId, APPLE, 5).status).toBe('pending'); // 15 × 200 × 1300 = 3,900,000
+    // No per-symbol cap: 16 more shares (26 in total, ~68% of equity) are limited only by cash.
+    expect(buy(participantId, APPLE, 16).status).toBe('pending');
   });
 
   it('refuses symbols whose market does not open again before the league ends (session_after_end)', () => {

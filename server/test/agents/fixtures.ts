@@ -130,7 +130,6 @@ export function pureInput(
     rules: {
       fee_rate: 0.00015,
       tax_rate: 0.002,
-      max_position_pct: 0.4,
       fx_spread: 0,
       rates: { KR: { fee_rate: 0.00015, tax_rate: 0.002 } },
       ...opts.rules,

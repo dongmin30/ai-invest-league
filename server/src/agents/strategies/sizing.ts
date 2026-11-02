@@ -6,15 +6,13 @@ const SAFETY = 0.995;
 
 /**
  * Tracks what rule strategies may still spend within one decision so every order they
- * emit passes placeOrder: available cash (fees included), the per-symbol position cap
- * (held + pending BUY quantity) and the remaining daily order count. Prices passed in are in
+ * emit passes placeOrder: available cash (fees included) and the remaining daily order count. Prices passed in are in
  * the league currency (ALL leagues: `price_krw`); fees are the symbol market's, and US buys in
  * ALL leagues also pay the FX spread.
  */
 export class OrderBudget {
   private cash: number;
   private ordersLeft: number;
-  private readonly cap: number;
   private readonly rules: DecisionInput['rules'];
   private readonly unified: boolean;
   private readonly heldQty = new Map<string, number>();
@@ -24,7 +22,6 @@ export class OrderBudget {
     const { portfolio, rules, pendingOrders } = input;
     this.cash = portfolio.available_cash;
     this.ordersLeft = Math.max(0, portfolio.max_orders_per_day - portfolio.orders_today);
-    this.cap = rules.max_position_pct * portfolio.equity;
     this.rules = rules;
     this.unified = input.league.market === 'ALL';
     for (const h of portfolio.holdings) this.heldQty.set(h.symbol, h.quantity);
@@ -43,7 +40,7 @@ export class OrderBudget {
     return this.cash;
   }
 
-  /** Held plus pending-buy quantity: what the position cap counts. */
+  /** Held plus pending-buy quantity. */
   exposure(symbol: string): number {
     return this.heldQty.get(symbol) ?? 0;
   }
@@ -60,8 +57,7 @@ export class OrderBudget {
   buyQuantity(symbol: string, price: number, budget: number): number {
     if (!this.canOrder || !(price > 0)) return 0;
     const byBudget = Math.min(budget, (this.cash * SAFETY) / this.costFactor(symbol));
-    const byCap = this.cap * SAFETY - this.exposure(symbol) * price;
-    return Math.max(0, Math.floor(Math.min(byBudget, byCap) / price));
+    return Math.max(0, Math.floor(byBudget / price));
   }
 
   sellableQuantity(symbol: string, held: number): number {

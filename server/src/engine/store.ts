@@ -41,6 +41,7 @@ export interface LeagueRow {
   max_orders_per_day: number;
   fee_rate: number;
   tax_rate: number;
+  /** Legacy column; the per-symbol position cap is no longer enforced. */
   max_position_pct: number;
   /** FX conversion cost per side (ALL leagues; 0 otherwise). */
   fx_spread: number;

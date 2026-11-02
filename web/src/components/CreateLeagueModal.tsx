@@ -4,7 +4,7 @@ import { api, errorMessage } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { useApi } from '../hooks/useApi';
 import { currencyOf, formatMoney, MARKET_LABEL, PROVIDER_LABEL } from '../lib/format';
-import { DURATION_MAX, DURATION_MIN, MARKET_RULES } from '../lib/leagueRules';
+import { DURATION_MAX, DURATION_MIN, MARKET_RULES, START_CASH_RANGE } from '../lib/leagueRules';
 import { Alert, btn, cx, ErrorState, inputClass, Loading, Modal } from './ui';
 
 const FORM_ID = 'create-league-form';
@@ -73,6 +73,7 @@ export default function CreateLeagueModal({ onClose, onCreated }: {
   const duration = Number(durationText);
   const cashValue = Number(startCash);
   const currency = currencyOf(market);
+  const cashRange = START_CASH_RANGE[market];
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -81,7 +82,9 @@ export default function CreateLeagueModal({ onClose, onCreated }: {
     if (!Number.isInteger(duration) || duration < DURATION_MIN || duration > DURATION_MAX) {
       return setError(`기간은 ${DURATION_MIN}~${DURATION_MAX} 거래일로 입력해 주세요.`);
     }
-    if (!Number.isFinite(cashValue) || cashValue <= 0) return setError('시작 자금을 올바르게 입력해 주세요.');
+    if (!Number.isFinite(cashValue) || cashValue < cashRange.min || cashValue > cashRange.max) {
+      return setError(`시작 자금은 ${cashRange.label} 사이로 입력해 주세요.`);
+    }
     setBusy(true);
     setError(null);
     try {
@@ -181,8 +184,10 @@ export default function CreateLeagueModal({ onClose, onCreated }: {
             <input
               className={inputClass}
               type="number"
-              min={1}
-              step={currency === 'KRW' ? 10_000 : 100}
+              inputMode="numeric"
+              // No numeric step/min: the browser would then only accept min + n·step (min 1, step 10,000
+              // rejected 10,000,000 and suggested 10,000,001). The range is checked on submit instead.
+              step="any"
               required
               value={startCash}
               onChange={(e) => {
@@ -193,7 +198,7 @@ export default function CreateLeagueModal({ onClose, onCreated }: {
           </label>
         </div>
         <p className="-mt-3 text-xs text-slate-500 dark:text-slate-400">
-          {Number.isFinite(cashValue) && cashValue > 0 ? formatMoney(currency, cashValue) : '-'} · 기본값 {formatMoney(currency, MARKET_RULES[market].start_cash)}
+          {Number.isFinite(cashValue) && cashValue > 0 ? formatMoney(currency, cashValue) : '-'} · 기본값 {formatMoney(currency, MARKET_RULES[market].start_cash)} · {cashRange.label}
         </p>
 
         <fieldset className="space-y-2">

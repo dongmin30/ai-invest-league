@@ -44,6 +44,13 @@ export function appliedFx(mid: number, side: OrderSide, spread: number): number 
 /** Mirrors server market/fx.ts FX_STALE_MS: US fills in 통합 leagues wait while the rate is older. */
 export const FX_STALE_MS = 30 * 60 * 1000;
 
+// Mirrors server api/routes/leagues.ts START_CASH_RANGE.
+export const START_CASH_RANGE: Record<LeagueMarket, { min: number; max: number; label: string }> = {
+  KR: { min: 100_000, max: 10_000_000_000, label: '10만~100억원' },
+  US: { min: 100, max: 10_000_000, label: '$100~$10,000,000' },
+  ALL: { min: 100_000, max: 10_000_000_000, label: '10만~100억원' },
+};
+
 export const DURATION_MIN = 1;
 export const DURATION_MAX = 20;
 

@@ -17,7 +17,7 @@ describe('buildPrompt', () => {
     expect(system).toContain('세금: 매도 금액의 0.2% (매도 시에만, ETF 매도는 증권거래세 면제)');
     expect(system).toContain('하루 주문 한도: 10건');
     expect(system).toContain('오늘 남은 주문 7건');
-    expect(system).toContain('종목당 비중 한도: 총자산의 40%');
+    expect(system).not.toContain('비중 한도');
     expect(system).toContain('공매도, 신용, 레버리지는 불가');
     expect(system).toContain('수량은 1 이상의 정수');
     expect(system).toContain('orders는 최대 5건');

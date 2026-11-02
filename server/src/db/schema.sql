@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS leagues (
   max_orders_per_day INTEGER NOT NULL,
   fee_rate REAL NOT NULL,
   tax_rate REAL NOT NULL,           -- applied to SELL amount
-  max_position_pct REAL NOT NULL DEFAULT 0.4,
+  max_position_pct REAL NOT NULL DEFAULT 0.4, -- legacy: the per-symbol cap was removed (2026-11-02); not enforced
   fx_spread REAL NOT NULL DEFAULT 0, -- FX conversion cost per side (ALL leagues; 0 otherwise)
   is_public INTEGER NOT NULL DEFAULT 1,
   invite_code TEXT,

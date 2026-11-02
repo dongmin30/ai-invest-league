@@ -33,7 +33,6 @@ export interface LeagueRules {
   /** League columns; in ALL leagues trades use `rates` of the symbol's market instead. */
   fee_rate: number;
   tax_rate: number;
-  max_position_pct: number;
   /** FX conversion cost per side for US symbols in ALL leagues (0 otherwise). */
   fx_spread: number;
   /** Fee and stock SELL tax per symbol market the league trades (KR ETFs pay no tax). */

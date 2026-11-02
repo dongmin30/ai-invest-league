@@ -343,7 +343,6 @@ export function buildDecisionInput(participantId: number): DecisionInput {
     rules: {
       fee_rate: league.fee_rate,
       tax_rate: league.tax_rate,
-      max_position_pct: league.max_position_pct,
       fx_spread: league.fx_spread,
       rates: Object.fromEntries(markets.map((m) => [m, rates(m)])),
     },
