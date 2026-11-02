@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import type { Currency, Holding, Order } from '@shared/api-types';
+import type { Currency, Holding, Market, Order } from '@shared/api-types';
 import { api, errorMessage } from '../api/client';
+import { useNow } from '../hooks/useNow';
 import { formatDateTime, formatFxRate, formatInt, formatMoney, formatSignedMoney, ORDER_STATUS_LABEL } from '../lib/format';
 import { Badge, btn, cx, EmptyState, RateText } from './ui';
 
@@ -64,18 +65,44 @@ export function HoldingsTable({ holdings, currency, onSelect }: {
   );
 }
 
+const MINUTE = 60_000;
+
+/** What a pending order's fill waits for, given the symbol's latest quote time and market state. */
+export function pendingFillHint(
+  order: Pick<Order, 'type' | 'created_at'>,
+  quote: { ts: number | null; open: boolean | undefined } | undefined,
+  now: number,
+): string {
+  const limit = order.type === 'LIMIT';
+  if (!quote || quote.open === undefined) return limit ? '지정가 조건이 맞으면 체결됩니다' : '다음 시세에 체결됩니다';
+  if (!quote.open) return limit ? '장이 열린 뒤 지정가 조건이 맞으면 체결됩니다' : '장이 열린 뒤 첫 시세에 체결됩니다';
+  if (quote.ts === null) return '시세를 기다리는 중입니다';
+  if (quote.ts >= order.created_at) return limit ? '지정가 조건을 기다리는 중입니다' : '다음 시세 수집 때 체결됩니다';
+  // Fills only use a quote stamped after the order. When the source runs late (Yahoo KR ≈ 20 min),
+  // that quote arrives about `lag` after the order.
+  const lag = now - quote.ts;
+  if (lag < 3 * MINUTE) return limit ? '다음 시세부터 지정가 조건을 확인합니다' : '다음 시세 수집 때 체결됩니다';
+  const mins = Math.max(1, Math.ceil((order.created_at + lag - now) / MINUTE));
+  const delay = `시세가 약 ${Math.round(lag / MINUTE)}분 늦게 들어와`;
+  return limit ? `${delay} 약 ${mins}분 뒤부터 지정가 조건을 확인합니다` : `${delay} 약 ${mins}분 뒤 체결 예상`;
+}
+
 function SideText({ side }: { side: Order['side'] }) {
   return <span className={cx('font-semibold', side === 'BUY' ? 'text-up' : 'text-down')}>{side === 'BUY' ? '매수' : '매도'}</span>;
 }
 
-export function PendingOrders({ orders, currency, names, currencies, onCanceled }: {
+export function PendingOrders({ orders, currency, names, currencies, quotes, openByMarket, onCanceled }: {
   orders: Order[];
   currency: Currency;
   names: Map<string, string>;
   /** Native currency per symbol (limit prices are native); falls back to the league currency. */
   currencies?: Map<string, Currency>;
+  /** Latest quote time and market per symbol, for the "when will this fill" hint. */
+  quotes?: Map<string, { ts: number | null; market: Market }>;
+  openByMarket?: Partial<Record<Market, boolean>>;
   onCanceled: (order: Order) => void;
 }) {
+  const now = useNow(15_000);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -109,6 +136,14 @@ export function PendingOrders({ orders, currency, names, currencies, onCanceled 
                 {o.type === 'LIMIT' ? `지정가 ${formatMoney(currencies?.get(o.symbol) ?? currency, o.limit_price)}` : '시장가'} ·{' '}
                 {formatDateTime(o.created_at)}
               </div>
+              {quotes && (
+                <div className="text-xs text-amber-700 dark:text-amber-300">
+                  {(() => {
+                    const q = quotes.get(o.symbol);
+                    return pendingFillHint(o, q && { ts: q.ts, open: openByMarket?.[q.market] }, now);
+                  })()}
+                </div>
+              )}
             </div>
             <button type="button" className={btn.small} disabled={busyId !== null} onClick={() => cancel(o.id)}>
               {busyId === o.id ? '취소 중…' : '취소'}

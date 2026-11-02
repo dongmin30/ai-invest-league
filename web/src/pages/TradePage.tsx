@@ -139,6 +139,10 @@ function TradeDesk({ league, participantId }: { league: LeagueSummary; participa
     () => new Map<string, Currency>((symbols.data ?? []).map((s) => [s.symbol, currencyOf(s.market)])),
     [symbols.data],
   );
+  const quoteInfo = useMemo(
+    () => new Map((symbols.data ?? []).map((s) => [s.symbol, { ts: s.ts, market: s.market }])),
+    [symbols.data],
+  );
   const statuses = useMemo(
     () => Object.fromEntries((status.data ?? []).map((s) => [s.market, s])) as Partial<Record<Market, MarketStatus>>,
     [status.data],
@@ -244,6 +248,8 @@ function TradeDesk({ league, participantId }: { league: LeagueSummary; participa
               currency={league.currency}
               names={names}
               currencies={currencies}
+              quotes={quoteInfo}
+              openByMarket={{ KR: statuses.KR?.open, US: statuses.US?.open }}
               onCanceled={() => {
                 reloadPortfolio({ silent: true });
                 reloadOrders({ silent: true });
