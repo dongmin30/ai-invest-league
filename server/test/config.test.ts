@@ -25,4 +25,16 @@ describe('config', () => {
     const absolute = path.join(repoRoot, 'elsewhere');
     expect((await loadConfig({ DATA_DIR: absolute })).dataDir).toBe(absolute);
   });
+
+  it('parses TRUST_PROXY as a boolean or trusted addresses', async () => {
+    expect((await loadConfig({ TRUST_PROXY: undefined })).trustProxy).toBe(false);
+    expect((await loadConfig({ TRUST_PROXY: 'false' })).trustProxy).toBe(false);
+    expect((await loadConfig({ TRUST_PROXY: 'true' })).trustProxy).toBe(true);
+    expect((await loadConfig({ TRUST_PROXY: '1' })).trustProxy).toBe(true);
+    await expect(loadConfig({ TRUST_PROXY: '2' })).rejects.toThrow(/TRUST_PROXY/);
+    expect((await loadConfig({ TRUST_PROXY: ' Loopback ' })).trustProxy).toBe('loopback');
+    expect((await loadConfig({ TRUST_PROXY: '127.0.0.1, ::1' })).trustProxy).toBe('127.0.0.1, ::1');
+    expect((await loadConfig({ TRUST_PROXY: '127.0.0.1' })).trustProxy).toBe('127.0.0.1');
+    await expect(loadConfig({ TRUST_PROXY: 'every$thing' })).rejects.toThrow(/TRUST_PROXY/);
+  });
 });

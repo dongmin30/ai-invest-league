@@ -10,6 +10,8 @@ import { loadVisibleLeague } from './leagues';
 export const HEARTBEAT_MS = 20_000;
 /** Open streams per user; a few browser tabs are fine, thousands are not. */
 export const MAX_STREAMS_PER_USER = 5;
+/** Liveness frame sent on open and every HEARTBEAT_MS. */
+export const PING = 'event: ping\ndata: {}\n\n';
 
 const StreamQuery = z.object({ league_id: z.coerce.number('league_id가 필요합니다.').int().positive() });
 
@@ -45,7 +47,10 @@ export async function streamRoutes(app: FastifyInstance, opts: StreamRouteOption
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
     });
-    res.write('retry: 5000\n\n');
+    // A named `ping` event (not a comment) right away and on every heartbeat, so the browser can
+    // tell a live stream from one a proxy holds back (Cloudflare quick tunnels buffer SSE) and
+    // fall back to polling. EventSource.onmessage never sees named events.
+    res.write(`retry: 5000\n\n${PING}`);
 
     const send = (event: StreamEvent) => {
       if (!res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -78,7 +83,7 @@ export async function streamRoutes(app: FastifyInstance, opts: StreamRouteOption
     bus.on('decision', onDecision);
     bus.on('order', onOrder);
     const heartbeat = setInterval(() => {
-      if (!res.writableEnded) res.write(': heartbeat\n\n');
+      if (!res.writableEnded) res.write(PING);
     }, HEARTBEAT_MS);
 
     let closed = false;

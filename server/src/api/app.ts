@@ -4,7 +4,7 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyJwt from '@fastify/jwt';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import { config } from '../config';
 import { now } from '../lib/time';
 import { createCollector, type Collector } from '../market/collector';
@@ -32,7 +32,9 @@ const CSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-
 const looksLikeFile = (url: string) => /\.[a-z0-9]+$/i.test(url.split('?')[0]!.split('/').pop() ?? '');
 
 export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInstance> {
-  const app = Fastify({ logger: opts.logger ?? false, trustProxy: config.trustProxy });
+  // Typed up front: a union-typed trustProxy otherwise steers Fastify's overloads to http2.
+  const serverOptions: FastifyServerOptions = { logger: opts.logger ?? false, trustProxy: config.trustProxy };
+  const app = Fastify(serverOptions);
   const streams = new Set<() => void>();
 
   app.setErrorHandler(errorHandler);

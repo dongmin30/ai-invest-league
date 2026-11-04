@@ -69,7 +69,9 @@ export default function LeaguePage() {
     },
     [leagueId, reportQuotes, reloadDetail, setDetail, pushFx],
   );
-  const streamState = useLeagueStream(Number.isFinite(leagueId) ? leagueId : null, onEvent);
+  // Without a live stream, refetch rankings (and averages) instead of waiting for pushes.
+  const onPoll = useCallback(() => reloadDetail({ silent: true }), [reloadDetail]);
+  const streamState = useLeagueStream(Number.isFinite(leagueId) ? leagueId : null, onEvent, onPoll);
 
   if (!Number.isFinite(leagueId)) return <ErrorState error={new ApiError(404, 'not_found', '잘못된 리그 주소입니다.')} />;
   if (detail.loading && !detail.data) return <Loading />;

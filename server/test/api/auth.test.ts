@@ -207,6 +207,29 @@ describe('auth', () => {
     expectApiError(await attempt(), 429, 'rate_limited');
   });
 
+  it('behind a trusted local proxy, keys rate limits on the proxy-appended IP, not a spoofed X-Forwarded-For', async () => {
+    const trustProxy = config.trustProxy;
+    config.trustProxy = 'loopback';
+    try {
+      await app.close();
+      app = await testApp();
+      // inject comes from 127.0.0.1 (the tunnel); the last X-Forwarded-For entry is what the proxy saw.
+      const attempt = (spoofed: string, client: string) =>
+        app.inject({
+          method: 'POST',
+          url: '/api/auth/login',
+          headers: { 'x-forwarded-for': `${spoofed}, ${client}` },
+          payload: { email: 'x@example.com', password: 'whatever1' },
+        });
+      for (let i = 0; i < 10; i++) expect((await attempt(`10.0.0.${i}`, '203.0.113.7')).statusCode).toBe(401);
+      expectApiError(await attempt('10.0.0.99', '203.0.113.7'), 429, 'rate_limited');
+      // A different real client still has its own budget.
+      expect((await attempt('10.0.0.1', '198.51.100.2')).statusCode).toBe(401);
+    } finally {
+      config.trustProxy = trustProxy;
+    }
+  });
+
   it('answers unknown API routes with a JSON 404', async () => {
     expectApiError(await app.inject({ method: 'GET', url: '/api/nope' }), 404, 'not_found');
     expectApiError(await app.inject({ method: 'POST', url: '/api/leagues/1/nope' }), 404, 'not_found');

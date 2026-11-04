@@ -5,6 +5,7 @@ server/data/
 .env.*
 !.env.example
 !.env.practice
+!.env.share
 *.db
 *.db-*
 *.log

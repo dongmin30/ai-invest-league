@@ -108,7 +108,8 @@ describe('GET /api/stream', () => {
     bus.emit('order', { league_id: other.id, participant_id: other.my_participant_id!, order: fakeOrder(other.my_participant_id!) });
     await tick();
 
-    expect(stream.text().startsWith('retry: 5000\n\n')).toBe(true);
+    // A ping first, so the browser can tell a live stream from one a proxy buffers.
+    expect(stream.text().startsWith('retry: 5000\n\nevent: ping\ndata: {}\n\n')).toBe(true);
     const events = stream.events();
     expect(events.map((e) => e.type)).toEqual(['quotes', 'rankings', 'decision', 'order', 'order']);
     expect(events[0]).toEqual({ type: 'quotes', quotes: [krQuote] });

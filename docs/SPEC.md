@@ -56,7 +56,7 @@ web/src/                     React app
 | `OLLAMA_MODEL` | `qwen3:8b` | |
 | `AGENT_TIMEOUT_SEC` | 60 | per decision, measured from when the job starts |
 | `COOKIE_SECURE` | `NODE_ENV=production` | mark the session cookie `Secure` (set when served over HTTPS) |
-| `TRUST_PROXY` | `false` | Fastify `trustProxy`, so rate limits key on the client IP behind a reverse proxy |
+| `TRUST_PROXY` | `false` | Fastify `trustProxy` (`true`/`false`, or comma-separated addresses/subnets such as `loopback`), so rate limits key on the client IP behind a reverse proxy. Prefer `loopback` over `true`, which lets a client-sent X-Forwarded-For choose the IP. `npm run share` uses `loopback` |
 | `DATA_DIR` | `server/data` | folder for `app.db` and the KIS token cache; relative paths resolve against the repo root (use a separate folder for smoke boots) |
 | `ENV_OVERLAY` | — | shell/process env only: path (relative to the repo root) of an extra env file loaded after `.env` with override, so its values win. `npm run practice` sets it to `.env.practice` (committed, no secrets: `sim`, `SIM_ALWAYS_OPEN`, 10 s collect, `DATA_DIR=server/data/practice`, blank `ANTHROPIC_API_KEY`). A missing file is a boot error. |
 
@@ -314,7 +314,7 @@ CREATE INDEX IF NOT EXISTS idx_decisions_agent ON decision_logs(agent_id, ts);
 | GET | /agents/:id | | `AgentDetail` |
 | POST | /admin/agents/:id/run | `{league_id}` (admin) | `DecisionLog` (forces a decision now; 409 `agent_busy` if one is running) |
 | POST | /admin/collect | (admin) | `{count}` (forces a quote tick) |
-| GET | /stream | `?league_id=` | SSE (`text/event-stream`), events = `StreamEvent` JSON in `data:`; quotes for the league market (ALL: every quote, plus `fx` events), rankings/decision/order for that league; heartbeat comment every 20s; at most 5 open streams per user (429 `too_many_streams`) |
+| GET | /stream | `?league_id=` | SSE (`text/event-stream`), events = `StreamEvent` JSON in `data:`; quotes for the league market (ALL: every quote, plus `fx` events), rankings/decision/order for that league; a named `event: ping` (`data: {}`) on open and every 20s as heartbeat — the web client falls back to polling (15s) when no ping arrives, e.g. behind a proxy that buffers SSE; at most 5 open streams per user (429 `too_many_streams`) |
 
 ### scheduler / index (owner: integration)
 - `scheduler.ts`: `startScheduler()`: every `COLLECT_INTERVAL_SEC` → `collector.tick()` then `matchOrders(quotes)` then recompute rankings for active leagues and emit `'rankings'`; every 60s → `updateLeagueStatuses()`, `ensureOfficialLeagues()`, `runDueAgents()`; every 10 min → `takeSnapshots(id)` for active leagues whose market is open (ALL leagues while either market is open, once per run), and once per market close for that market's leagues (ALL leagues at both closes, `hasClosingQuotes(id, close, market)` counting only that market's symbols) (after a fresh quote fetch, not the collect run already in flight), taken when every held or pending-order symbol of those leagues has a quote with `ts ≥` the session close (`hasClosingQuotes`), or at close + `POST_CLOSE_FETCH_MS` at the latest. All jobs are guarded against overlap and never crash the process.

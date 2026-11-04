@@ -36,6 +36,20 @@ const bool = (fallback: boolean) =>
       .optional()
       .transform((v) => (v === undefined ? fallback : v === 'true' || v === '1' || v === 'yes')),
   );
+/**
+ * Fastify `trustProxy`: true/false, or addresses/subnets to trust (e.g. `loopback`).
+ * `true` trusts every hop, so a client-sent X-Forwarded-For picks the IP rate limits key on;
+ * behind one local proxy (a tunnel) use `loopback` so only that proxy's appended IP counts.
+ */
+const trustProxy = z.preprocess(
+  (v) => {
+    const s = typeof v === 'string' ? v.trim().toLowerCase() : v;
+    if (s === undefined || s === '' || s === 'false' || s === '0' || s === 'no') return false;
+    if (s === 'true' || s === '1' || s === 'yes') return true;
+    return s;
+  },
+  z.union([z.boolean(), z.string().regex(/^(?!\d+$)[a-z0-9.:/,\s]+$/, 'true/false or trusted addresses (e.g. loopback); hop counts are not supported')]),
+);
 const int = (fallback: number, min: number) =>
   z.preprocess(emptyToUndefined, z.coerce.number().int().min(min).default(fallback));
 
@@ -56,7 +70,7 @@ const EnvSchema = z.object({
   OLLAMA_MODEL: z.preprocess(emptyToUndefined, z.string().default('qwen3:8b')),
   AGENT_TIMEOUT_SEC: int(60, 1),
   COOKIE_SECURE: bool(process.env.NODE_ENV === 'production'),
-  TRUST_PROXY: bool(false),
+  TRUST_PROXY: trustProxy,
   DATA_DIR: optionalString,
 });
 
@@ -96,8 +110,8 @@ export interface Config {
   agentTimeoutSec: number;
   /** Marks the session cookie Secure; set when the app is served over HTTPS. */
   cookieSecure: boolean;
-  /** Trust X-Forwarded-For (behind a reverse proxy), so rate limits see the client IP. */
-  trustProxy: boolean;
+  /** Fastify trustProxy (behind a reverse proxy), so rate limits see the client IP. */
+  trustProxy: boolean | string;
   /** Absolute path of the data directory (SQLite file, KIS token cache); server/data unless DATA_DIR is set. */
   dataDir: string;
   /** Absolute path of web/dist, served in production. */

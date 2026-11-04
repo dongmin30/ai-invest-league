@@ -80,7 +80,7 @@ function TradeDesk({ league, participantId }: { league: LeagueSummary; participa
   const { reload: reloadStatus } = status;
   const { reload: reloadPortfolio } = portfolio;
   const { reload: reloadOrders } = orders;
-  const { setData: setSymbols } = symbols;
+  const { setData: setSymbols, reload: reloadSymbols } = symbols;
 
   useEffect(() => {
     const id = window.setInterval(() => reloadStatus({ silent: true }), STATUS_REFRESH_MS);
@@ -131,7 +131,13 @@ function TradeDesk({ league, participantId }: { league: LeagueSummary; participa
     },
     [market, participantId, orders.data, reportQuotes, setSymbols, refreshAccount, pushFx],
   );
-  const streamState = useLeagueStream(league.id, onEvent);
+  // Without a live stream, refetch prices and the account instead of waiting for pushes.
+  const onPoll = useCallback(() => {
+    reloadSymbols({ silent: true });
+    reloadPortfolio({ silent: true });
+    reloadOrders({ silent: true });
+  }, [reloadSymbols, reloadPortfolio, reloadOrders]);
+  const streamState = useLeagueStream(league.id, onEvent, onPoll);
 
   const prices = useMemo(() => new Map((symbols.data ?? []).map((s) => [s.symbol, s.price])), [symbols.data]);
   const names = useMemo(() => new Map((symbols.data ?? []).map((s) => [s.symbol, s.name])), [symbols.data]);
