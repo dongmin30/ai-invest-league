@@ -13,6 +13,8 @@ import type {
   LeaveLeagueResponse,
   Market,
   MarketStatus,
+  OfficialLeagueType,
+  OfficialSeries,
   Order,
   OrderStatus,
   PlaceOrderRequest,
@@ -68,7 +70,7 @@ const FALLBACK_MESSAGES: Record<number, string> = {
 };
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   body?: unknown;
   query?: Record<string, string | number | undefined | null>;
   /** Skip the global 401 handler (used by the session probe and login forms). */
@@ -166,6 +168,9 @@ export const api = {
   adminRunAgent: (agentId: number, leagueId: number) =>
     request<DecisionLog>(`/admin/agents/${agentId}/run`, { method: 'POST', body: { league_id: leagueId } }),
   adminCollect: () => request<{ count: number }>('/admin/collect', { method: 'POST' }),
+  adminOfficialSeries: () => request<OfficialSeries[]>('/admin/official-series'),
+  adminSetOfficialSeries: (market: LeagueMarket, type: OfficialLeagueType, enabled: boolean) =>
+    request<OfficialSeries[]>(`/admin/official-series/${market}/${type}`, { method: 'PUT', body: { enabled } }),
 };
 
 export function errorMessage(err: unknown): string {

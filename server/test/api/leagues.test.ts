@@ -8,6 +8,7 @@ import type {
   LeagueDetail,
   LeagueSummary,
   MarketStatus,
+  OfficialSeries,
   Order,
   Portfolio,
   SymbolRow,
@@ -121,6 +122,8 @@ describe('protected endpoints', () => {
       ['GET', '/api/agents/1'],
       ['POST', '/api/admin/agents/1/run'],
       ['POST', '/api/admin/collect'],
+      ['GET', '/api/admin/official-series'],
+      ['PUT', '/api/admin/official-series/KR/3d'],
       ['GET', '/api/stream?league_id=1'],
     ];
     for (const [method, url] of routes) {
@@ -625,6 +628,34 @@ describe('admin', () => {
     });
     expectApiError(run, 403, 'forbidden');
     expect(collectorTicks).toBe(0);
+    expectApiError(await get(bob, '/api/admin/official-series'), 403, 'forbidden');
+    const put = await app.inject({
+      method: 'PUT',
+      url: '/api/admin/official-series/KR/3d',
+      cookies: bob.cookies,
+      payload: { enabled: true },
+    });
+    expectApiError(put, 403, 'forbidden');
+    expect(db.prepare('SELECT COUNT(*) FROM official_series').pluck().get()).toBe(0);
+  });
+
+  it('lists the official series and switches one on and off', async () => {
+    const list = (await get(admin, '/api/admin/official-series')).json<OfficialSeries[]>();
+    expect(list).toHaveLength(9);
+    expect(list.every((s) => !s.enabled)).toBe(true);
+
+    const put = (url: string, payload: unknown) => app.inject({ method: 'PUT', url, cookies: admin.cookies, payload: payload as object });
+    const on = await put('/api/admin/official-series/ALL/1m', { enabled: true });
+    expect(on.statusCode, on.body).toBe(200);
+    expect(on.json<OfficialSeries[]>().find((s) => s.market === 'ALL' && s.type === '1m')).toMatchObject({ enabled: true });
+    expect((await get(alice, '/api/leagues?market=ALL')).json<LeagueSummary[]>().map((l) => l.name)).toContain('통합 1개월 리그 #1');
+
+    const off = await put('/api/admin/official-series/ALL/1m', { enabled: false });
+    expect(off.json<OfficialSeries[]>().every((s) => !s.enabled && s.active_count + s.recruiting_count === 0)).toBe(true);
+
+    expectApiError(await put('/api/admin/official-series/JP/1m', { enabled: true }), 400, 'validation');
+    expectApiError(await put('/api/admin/official-series/KR/custom', { enabled: true }), 400, 'validation');
+    expectApiError(await put('/api/admin/official-series/KR/3d', {}), 400, 'validation');
   });
 
   it('forces a quote tick that also matches pending orders', async () => {
@@ -686,6 +717,10 @@ describe('admin', () => {
     expect(log.accepted_order_ids.length).toBeGreaterThan(0);
 
     expectApiError(await run(agents.claude, league.id), 400, 'agent_disabled');
+    // Only active leagues: a recruiting one could be deleted while the model is still thinking.
+    db.prepare("UPDATE leagues SET status = 'recruiting' WHERE id = ?").run(league.id);
+    expectApiError(await run(agents.baseline, league.id), 400, 'league_inactive');
+    db.prepare("UPDATE leagues SET status = 'active' WHERE id = ?").run(league.id);
     expectApiError(await run(agents.baseline, 9999), 404, 'not_found');
     expectApiError(await run(9999, league.id), 404, 'not_found');
     expectApiError(

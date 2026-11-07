@@ -6,6 +6,8 @@ import type {
   LeagueSummary,
   LeagueType,
   Market,
+  OfficialLeagueType,
+  OfficialSeries,
   Order,
   RankingRow,
 } from '../../../shared/api-types';
@@ -43,8 +45,8 @@ import {
 const MARKETS: LeagueMarket[] = ['KR', 'US', 'ALL'];
 /** Official league name prefix per market: "KR 1주 리그 #3", "통합 1주 리그 #1". */
 const MARKET_PREFIX: Record<LeagueMarket, string> = { KR: 'KR', US: 'US', ALL: '통합' };
-const OFFICIAL_TYPES = ['3d', '1w', '1m'] as const;
-type OfficialType = (typeof OFFICIAL_TYPES)[number];
+export const OFFICIAL_TYPES: readonly OfficialLeagueType[] = ['3d', '1w', '1m'];
+type OfficialType = OfficialLeagueType;
 const TYPE_LABELS: Record<OfficialType, string> = { '3d': '3일', '1w': '1주', '1m': '1개월' };
 const INVITE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const MAX_NAME_LENGTH = 40;
@@ -439,18 +441,102 @@ function createOfficial(market: LeagueMarket, type: OfficialType, startAt: numbe
   });
 }
 
+// ---- official series switches (admin) ----
+
+function isSeriesEnabled(market: LeagueMarket, type: OfficialType): boolean {
+  return sql('SELECT enabled FROM official_series WHERE market = ? AND type = ?').pluck().get(market, type) === 1;
+}
+
+/** All 9 official series (market × type) with their switch and unfinished league counts. */
+export function listOfficialSeries(): OfficialSeries[] {
+  return MARKETS.flatMap((market) =>
+    OFFICIAL_TYPES.map((type) => {
+      const leagues = officialLeagues(market, type);
+      return {
+        market,
+        type,
+        enabled: isSeriesEnabled(market, type),
+        active_count: leagues.filter((l) => l.status === 'active').length,
+        recruiting_count: leagues.filter((l) => l.status === 'recruiting').length,
+      };
+    }),
+  );
+}
+
 /**
- * Keeps every market × official type running: if nothing is active or recruiting, the
- * first league starts at the next open; while one is active, the next one is scheduled per
+ * Switches an official series on or off and applies it at once (see ensureOfficialLeagues):
+ * on schedules its next league, off ends its active league now and deletes its recruiting one.
+ */
+export function setOfficialSeriesEnabled(market: LeagueMarket, type: OfficialType, enabled: boolean): OfficialSeries[] {
+  sql(
+    `INSERT INTO official_series (market, type, enabled) VALUES (?, ?, ?)
+     ON CONFLICT (market, type) DO UPDATE SET enabled = excluded.enabled`,
+  ).run(market, type, enabled ? 1 : 0);
+  ensureOfficialLeagues();
+  return listOfficialSeries();
+}
+
+/** Deletes a league that has not started, with its participants (no orders can exist yet). */
+function deleteRecruitingLeague(leagueId: number): void {
+  tx(() => {
+    const league = getLeagueRow(leagueId);
+    if (!league || league.status !== 'recruiting') return;
+    const ids = sql('SELECT id FROM participants WHERE league_id = ?').pluck().all(leagueId) as number[];
+    for (const id of ids) {
+      for (const table of ['orders', 'holdings', 'snapshots']) sql(`DELETE FROM ${table} WHERE participant_id = ?`).run(id);
+    }
+    sql('DELETE FROM decision_logs WHERE league_id = ?').run(leagueId);
+    sql('DELETE FROM participants WHERE league_id = ?').run(leagueId);
+    sql('DELETE FROM leagues WHERE id = ?').run(leagueId);
+  });
+}
+
+/** Ends an active league now: end_at moves to the present, then finishLeague() settles it. */
+function endLeagueNow(leagueId: number): void {
+  sql("UPDATE leagues SET end_at = MIN(end_at, ?) WHERE id = ? AND status = 'active'").run(now(), leagueId);
+  finishLeague(leagueId);
+}
+
+/**
+ * Brings every official series in line with its switch (off unless an admin turned it on):
+ * a switched-off series has its active league ended now and its recruiting one deleted. A
+ * switched-on series keeps running: if nothing is active or recruiting, the first league
+ * starts at the next open; while one is active, the next one is scheduled per
  * nextScheduledStart() and recruits until then. Enabled agents for the market are joined
  * to new and recruiting official leagues. Returns the leagues it created.
  */
 export function ensureOfficialLeagues(): LeagueSummary[] {
+  const at = now();
+  let ended = 0;
+  let removed = 0;
+  for (const market of MARKETS) {
+    for (const type of OFFICIAL_TYPES) {
+      if (isSeriesEnabled(market, type)) continue;
+      for (const league of officialLeagues(market, type)) {
+        if (league.status === 'recruiting' && league.start_at > at) {
+          deleteRecruitingLeague(league.id);
+          removed++;
+          continue;
+        }
+        // Past end_at it is waiting for its closing prints: updateLeagueStatuses() finishes it.
+        if (league.end_at <= at) continue;
+        // Started but not yet marked active (the status update runs on the same minute tick).
+        if (league.status === 'recruiting') sql("UPDATE leagues SET status = 'active' WHERE id = ?").run(league.id);
+        endLeagueNow(league.id);
+        ended++;
+      }
+    }
+  }
+  if (ended + removed > 0 && !process.env.VITEST) {
+    console.log(`[leagues] official series switched off: ended ${ended} active league(s), deleted ${removed} recruiting league(s)`);
+  }
+
   const created: LeagueSummary[] = [];
   tx(() => {
     for (const market of MARKETS) {
       const agentIds = enabledAgentsFor(market);
       for (const type of OFFICIAL_TYPES) {
+        if (!isSeriesEnabled(market, type)) continue;
         let leagues = officialLeagues(market, type);
         if (leagues.length === 0) {
           created.push(createOfficial(market, type, nextLeagueOpen(market, now()), agentIds));

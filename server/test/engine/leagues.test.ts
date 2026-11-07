@@ -10,8 +10,10 @@ import {
   joinLeague,
   joinLeagueByCode,
   listLeagues,
+  listOfficialSeries,
   myDashboard,
   nextScheduledStart,
+  setOfficialSeriesEnabled,
   updateLeagueStatuses,
 } from '../../src/engine/leagues';
 import { matchOrders } from '../../src/engine/matcher';
@@ -254,8 +256,140 @@ describe('listLeagues', () => {
   });
 });
 
-describe('ensureOfficialLeagues', () => {
+/** Switches every official series on without running ensureOfficialLeagues(). */
+function enableAllSeries(): void {
+  const insert = db.prepare('INSERT INTO official_series (market, type, enabled) VALUES (?, ?, 1)');
+  for (const market of ['KR', 'US', 'ALL']) for (const type of ['3d', '1w', '1m']) insert.run(market, type);
+}
+
+describe('official series switches', () => {
   beforeEach(() => resetEngineState(SATURDAY));
+  afterEach(() => restoreEngineState());
+
+  const official = (market: string, type: string) =>
+    db
+      .prepare('SELECT id, name, status, end_at FROM leagues WHERE owner_id IS NULL AND market = ? AND type = ? ORDER BY id')
+      .all(market, type) as { id: number; name: string; status: string; end_at: number }[];
+
+  it('runs no official league until an admin switches its series on', () => {
+    makeAgent('기준선 봇', { provider: 'rule', model: 'baseline' });
+    expect(ensureOfficialLeagues()).toEqual([]);
+    expect(db.prepare('SELECT COUNT(*) FROM leagues').pluck().get()).toBe(0);
+    const series = listOfficialSeries();
+    expect(series).toHaveLength(9);
+    expect(series.every((s) => !s.enabled && s.active_count === 0 && s.recruiting_count === 0)).toBe(true);
+
+    const after = setOfficialSeriesEnabled('KR', '1w', true);
+    expect(after.find((s) => s.market === 'KR' && s.type === '1w')).toEqual({
+      market: 'KR',
+      type: '1w',
+      enabled: true,
+      active_count: 0,
+      recruiting_count: 1,
+    });
+    expect(after.filter((s) => s.enabled)).toHaveLength(1);
+    expect(official('KR', '1w').map((l) => [l.name, l.status])).toEqual([['KR 1주 리그 #1', 'recruiting']]);
+    expect(db.prepare('SELECT COUNT(*) FROM leagues').pluck().get()).toBe(1);
+  });
+
+  it('switching off deletes the recruiting league and ends the active one now, leaving custom leagues alone', () => {
+    const user = makeUser();
+    makeAgent('기준선 봇', { provider: 'rule', model: 'baseline' });
+    setOfficialSeriesEnabled('KR', '3d', true);
+    const customLeague = custom({ owner_id: user });
+    setClock(KR_OPEN + HOUR);
+    updateLeagueStatuses();
+    ensureOfficialLeagues(); // schedules #2 while #1 is active
+    const [first, second] = official('KR', '3d');
+    expect([first!.status, second!.status]).toEqual(['active', 'recruiting']);
+    const trader = joinLeague(first!.id, { userId: user });
+    joinLeague(second!.id, { userId: user });
+    feed(quote(SAMSUNG, 80_000));
+    const pending = buy(trader, SAMSUNG, 1, 50_000);
+    const finishedAt = clockNow();
+
+    const after = setOfficialSeriesEnabled('KR', '3d', false);
+    expect(after.find((s) => s.market === 'KR' && s.type === '3d')).toMatchObject({ enabled: false, active_count: 0, recruiting_count: 0 });
+    expect(official('KR', '3d')).toEqual([{ id: first!.id, name: 'KR 3일 리그 #1', status: 'finished', end_at: finishedAt }]);
+    expect(getOrderRow(pending.id)).toMatchObject({ status: 'canceled', reject_reason: '리그 종료로 취소되었습니다.' });
+    // Standings are frozen (a participant who never traded keeps no rank, as at a normal finish).
+    expect(getParticipantRow(trader)).toMatchObject({ final_rank: null, final_return: 0 });
+    expect(db.prepare('SELECT COUNT(*) FROM leagues WHERE id = ?').pluck().get(second!.id)).toBe(0);
+    expect(db.prepare('SELECT COUNT(*) FROM participants WHERE league_id = ?').pluck().get(second!.id)).toBe(0);
+    expect(getLeagueRow(customLeague.id)!.status).toBe('active');
+
+    // Stays off on later runs; switching back on starts a fresh league.
+    expect(ensureOfficialLeagues()).toEqual([]);
+    setOfficialSeriesEnabled('KR', '3d', true);
+    expect(official('KR', '3d').map((l) => [l.name, l.status])).toEqual([
+      ['KR 3일 리그 #1', 'finished'],
+      ['KR 3일 리그 #2', 'recruiting'], // from the next open; the deleted #2 never ran, so its number is reused
+    ]);
+  });
+});
+
+describe('official series switched off on an upgraded database', () => {
+  afterEach(() => restoreEngineState());
+
+  // Leagues created while every series was implicitly on; official_series is still empty.
+  function seedOldOfficialLeagues(): void {
+    enableAllSeries();
+    ensureOfficialLeagues();
+    db.prepare('DELETE FROM official_series').run();
+  }
+
+  it('ends started leagues (also one not yet marked active), deletes future ones, and waits for closing prints', () => {
+    resetEngineState(SATURDAY);
+    seedOldOfficialLeagues();
+    const kr3d = db.prepare("SELECT id FROM leagues WHERE market = 'KR' AND type = '3d'").pluck().get() as number;
+    const all1w = db.prepare("SELECT id FROM leagues WHERE market = 'ALL' AND type = '1w'").pluck().get() as number;
+    const us1m = db.prepare("SELECT id FROM leagues WHERE market = 'US' AND type = '1m'").pluck().get() as number;
+    // US 1m ran its last day and is waiting for the closing print; ALL 1w has a user decision log.
+    db.prepare("UPDATE leagues SET status = 'active', start_at = ?, end_at = ? WHERE id = ?").run(KR_OPEN - DAY, KR_OPEN + HOUR / 2, us1m);
+    const agent = makeAgent('기준선 봇', { provider: 'rule', model: 'baseline' });
+    const pid = joinLeague(all1w, { agentId: agent });
+    db.prepare(
+      "INSERT INTO decision_logs (agent_id, participant_id, league_id, ts, status, latency_ms) VALUES (?, ?, ?, ?, 'hold', 1)",
+    ).run(agent, pid, all1w, SATURDAY);
+
+    setClock(KR_OPEN + HOUR); // KR and 통합 leagues have started, but no status update has run yet
+    ensureOfficialLeagues();
+
+    expect(getLeagueRow(kr3d)).toMatchObject({ status: 'finished', end_at: KR_OPEN + HOUR });
+    expect(getLeagueRow(all1w)).toMatchObject({ status: 'finished' });
+    expect(getLeagueRow(us1m)).toMatchObject({ status: 'active' }); // left to updateLeagueStatuses()
+    expect(db.prepare("SELECT COUNT(*) FROM leagues WHERE market = 'US' AND status = 'recruiting'").pluck().get()).toBe(0);
+    expect(db.prepare("SELECT COUNT(*) FROM leagues WHERE status <> 'finished'").pluck().get()).toBe(1);
+    expect(db.prepare('SELECT COUNT(*) FROM decision_logs WHERE league_id = ?').pluck().get(all1w)).toBe(1);
+
+    setClock(KR_OPEN + HOUR / 2 + POST_CLOSE_FETCH_MS + MIN);
+    updateLeagueStatuses();
+    expect(getLeagueRow(us1m)!.status).toBe('finished');
+  });
+
+  it('deletes a recruiting league together with its decision logs', () => {
+    resetEngineState(SATURDAY);
+    seedOldOfficialLeagues();
+    const league = db.prepare("SELECT id FROM leagues WHERE market = 'KR' AND type = '1w'").pluck().get() as number;
+    const agent = makeAgent('기준선 봇', { provider: 'rule', model: 'baseline' });
+    const pid = joinLeague(league, { agentId: agent });
+    db.prepare(
+      "INSERT INTO decision_logs (agent_id, participant_id, league_id, ts, status, latency_ms) VALUES (?, ?, ?, ?, 'hold', 1)",
+    ).run(agent, pid, league, SATURDAY);
+
+    ensureOfficialLeagues();
+    expect(getLeagueRow(league)).toBeUndefined();
+    expect(db.prepare('SELECT COUNT(*) FROM decision_logs').pluck().get()).toBe(0);
+    expect(db.prepare('SELECT COUNT(*) FROM leagues').pluck().get()).toBe(0);
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+  });
+});
+
+describe('ensureOfficialLeagues', () => {
+  beforeEach(() => {
+    resetEngineState(SATURDAY);
+    enableAllSeries();
+  });
   afterEach(() => restoreEngineState());
 
   it('creates one league per market and type starting at the next open, joining enabled agents', () => {

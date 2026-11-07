@@ -144,3 +144,12 @@ CREATE TABLE IF NOT EXISTS decision_logs (
   latency_ms INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_decisions_agent ON decision_logs(agent_id, ts);
+
+-- Official league series (market × length) an admin switched on; a missing row means off,
+-- so no official league runs until an admin enables its series (see ensureOfficialLeagues).
+CREATE TABLE IF NOT EXISTS official_series (
+  market TEXT NOT NULL CHECK (market IN ('KR','US','ALL')),
+  type TEXT NOT NULL CHECK (type IN ('3d','1w','1m')),
+  enabled INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (market, type)
+);

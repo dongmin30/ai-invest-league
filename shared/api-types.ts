@@ -8,6 +8,17 @@ export type Market = 'KR' | 'US';
 export type LeagueMarket = Market | 'ALL';
 export type Currency = 'KRW' | 'USD';
 export type LeagueType = '3d' | '1w' | '1m' | 'custom';
+export type OfficialLeagueType = Exclude<LeagueType, 'custom'>;
+
+/** GET/PUT /api/admin/official-series: one auto-run official league series (market × length). */
+export interface OfficialSeries {
+  market: LeagueMarket;
+  type: OfficialLeagueType;
+  /** Off by default; while off no league of this series is scheduled or kept running. */
+  enabled: boolean;
+  active_count: number;
+  recruiting_count: number;
+}
 export type LeagueStatus = 'recruiting' | 'active' | 'finished';
 export type OrderSide = 'BUY' | 'SELL';
 export type OrderType = 'MARKET' | 'LIMIT';

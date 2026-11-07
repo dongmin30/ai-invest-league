@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { LeagueMarket, LeagueStatus, LeagueSummary } from '@shared/api-types';
 import { api } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
 import CreateLeagueModal from '../components/CreateLeagueModal';
 import { JoinByCodeForm } from '../components/Invite';
 import { JoinLeague } from '../components/JoinLeague';
+import OfficialSeriesPanel from '../components/OfficialSeriesPanel';
 import { LeagueCountdown, LeagueMetaBadges } from '../components/league';
 import { btn, cx, EmptyState, ErrorState, Loading } from '../components/ui';
 import { useApi } from '../hooks/useApi';
@@ -65,6 +67,7 @@ function LeagueRow({ league, onJoined }: { league: LeagueSummary; onJoined: (lea
 export default function LeaguesPage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [creating, setCreating] = useState(false);
   const status = (TABS as string[]).includes(params.get('status') ?? '') ? (params.get('status') as LeagueStatus) : 'recruiting';
   const market = parseMarket(params.get('market'));
@@ -103,6 +106,8 @@ export default function LeaguesPage() {
           </button>
         </div>
       </div>
+
+      {user?.role === 'admin' && <OfficialSeriesPanel onChanged={() => leagues.reload({ silent: true })} />}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex rounded-lg bg-slate-100 dark:bg-slate-700 p-1" role="tablist">
