@@ -17,6 +17,7 @@ import type {
   OrderStatus,
   PlaceOrderRequest,
   Portfolio,
+  SignupOptions,
   SymbolRow,
   User,
 } from '@shared/api-types';
@@ -120,7 +121,8 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 export const api = {
   health: () => request<HealthResponse>('/health'),
 
-  register: (body: { email: string; password: string; nickname: string }) =>
+  signupOptions: () => request<SignupOptions>('/auth/signup-options', { silent401: true }),
+  register: (body: { email: string; password: string; nickname: string; signup_code?: string }) =>
     request<{ user: User }>('/auth/register', { method: 'POST', body, silent401: true }),
   login: (body: { email: string; password: string }) =>
     request<{ user: User }>('/auth/login', { method: 'POST', body, silent401: true }),

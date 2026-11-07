@@ -50,6 +50,13 @@ const trustProxy = z.preprocess(
   },
   z.union([z.boolean(), z.string().regex(/^(?!\d+$)[a-z0-9.:/,\s]+$/, 'true/false or trusted addresses (e.g. loopback); hop counts are not supported')]),
 );
+/**
+ * 입장코드 comparison form: NFKC (full-width letters and dashes become ASCII), then spaces and
+ * dashes dropped and upper-cased, so `k7qm 4xpa` matches `K7QM-4XPA`.
+ */
+export function normalizeSignupCode(code: string): string {
+  return code.normalize('NFKC').replace(/[\s\-‐-―−]+/g, '').toUpperCase();
+}
 const int = (fallback: number, min: number) =>
   z.preprocess(emptyToUndefined, z.coerce.number().int().min(min).default(fallback));
 
@@ -71,6 +78,14 @@ const EnvSchema = z.object({
   AGENT_TIMEOUT_SEC: int(60, 1),
   COOKIE_SECURE: bool(process.env.NODE_ENV === 'production'),
   TRUST_PROXY: trustProxy,
+  SIGNUP_CODE: z.preprocess(
+    emptyToUndefined,
+    z
+      .string()
+      .trim()
+      .refine((s) => normalizeSignupCode(s).length >= 8, 'needs at least 8 characters besides spaces and hyphens (a short code can be guessed)')
+      .optional(),
+  ),
   DATA_DIR: optionalString,
 });
 
@@ -112,6 +127,8 @@ export interface Config {
   cookieSecure: boolean;
   /** Fastify trustProxy (behind a reverse proxy), so rate limits see the client IP. */
   trustProxy: boolean | string;
+  /** When set, registering needs this code (compared via normalizeSignupCode); logins are unaffected. */
+  signupCode: string | undefined;
   /** Absolute path of the data directory (SQLite file, KIS token cache); server/data unless DATA_DIR is set. */
   dataDir: string;
   /** Absolute path of web/dist, served in production. */
@@ -140,6 +157,7 @@ export const config: Config = {
   agentTimeoutSec: env.AGENT_TIMEOUT_SEC,
   cookieSecure: env.COOKIE_SECURE,
   trustProxy: env.TRUST_PROXY,
+  signupCode: env.SIGNUP_CODE,
   // Relative DATA_DIR values resolve against the repo root, so `npm run dev` and `npm start` agree.
   dataDir: env.DATA_DIR ? path.resolve(repoRoot, env.DATA_DIR) : path.join(serverRoot, 'data'),
   webDistDir: path.join(repoRoot, 'web', 'dist'),

@@ -29,6 +29,11 @@ export interface User {
   created_at: number;
 }
 
+/** GET /api/auth/signup-options (public). */
+export interface SignupOptions {
+  signup_code_required: boolean;
+}
+
 export interface Quote {
   symbol: string; // provider-neutral code: '005930' (KR) or 'AAPL' (US)
   market: Market;

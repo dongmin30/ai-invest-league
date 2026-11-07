@@ -230,6 +230,56 @@ describe('auth', () => {
     }
   });
 
+  describe('signup code (SIGNUP_CODE)', () => {
+    afterEach(() => {
+      config.signupCode = undefined;
+    });
+
+    const registerWith = (email: string, signup_code?: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/auth/register',
+        payload: { email, password: 'password123', nickname: email.split('@')[0], ...(signup_code === undefined ? {} : { signup_code }) },
+      });
+
+    it('is not required by default, and the options endpoint is public', async () => {
+      const opts = await app.inject({ method: 'GET', url: '/api/auth/signup-options' });
+      expect(opts.statusCode).toBe(200);
+      expect(opts.json()).toEqual({ signup_code_required: false });
+      expect((await registerWith('open@example.com')).statusCode).toBe(200);
+      // A code sent anyway is ignored.
+      expect((await registerWith('open2@example.com', 'whatever')).statusCode).toBe(200);
+    });
+
+    it('when set, registering needs the code (case, spaces and hyphens ignored); logins do not', async () => {
+      await register(app, 'early@example.com');
+      config.signupCode = 'K7QM-4XPA';
+
+      expect((await app.inject({ method: 'GET', url: '/api/auth/signup-options' })).json()).toEqual({ signup_code_required: true });
+      expectApiError(await registerWith('stranger@example.com'), 403, 'invalid_signup_code');
+      expectApiError(await registerWith('stranger@example.com', ''), 403, 'invalid_signup_code');
+      expectApiError(await registerWith('stranger@example.com', 'K7QM-4XPB'), 403, 'invalid_signup_code');
+      expect(db.prepare('SELECT COUNT(*) FROM users WHERE email = ?').pluck().get('stranger@example.com')).toBe(0);
+
+      // A wrong code on a taken email still says 403, so outsiders cannot probe registered emails.
+      expectApiError(await registerWith('early@example.com', 'nope'), 403, 'invalid_signup_code');
+
+      // Full-width letters and a Unicode dash (e.g. from a phone keyboard) still match.
+      const wide = await registerWith('wide@example.com', 'Ｋ７ＱＭ－４ＸＰＡ');
+      expect(wide.statusCode, wide.body).toBe(200);
+
+      const ok = await registerWith('friend@example.com', ' k7qm 4xpa ');
+      expect(ok.statusCode, ok.body).toBe(200);
+
+      const login = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email: 'early@example.com', password: 'password123' },
+      });
+      expect(login.statusCode, login.body).toBe(200);
+    });
+  });
+
   it('answers unknown API routes with a JSON 404', async () => {
     expectApiError(await app.inject({ method: 'GET', url: '/api/nope' }), 404, 'not_found');
     expectApiError(await app.inject({ method: 'POST', url: '/api/leagues/1/nope' }), 404, 'not_found');

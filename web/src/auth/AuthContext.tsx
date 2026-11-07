@@ -8,7 +8,7 @@ interface AuthValue {
   user: User | null;
   status: AuthStatus;
   login: (email: string, password: string) => Promise<User>;
-  register: (email: string, password: string, nickname: string) => Promise<User>;
+  register: (email: string, password: string, nickname: string, signupCode?: string) => Promise<User>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -50,8 +50,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return res.user;
   }, []);
 
-  const register = useCallback(async (email: string, password: string, nickname: string) => {
-    const res = await api.register({ email, password, nickname });
+  const register = useCallback(async (email: string, password: string, nickname: string, signupCode?: string) => {
+    const res = await api.register({ email, password, nickname, signup_code: signupCode });
     setUser(res.user);
     setStatus('authenticated');
     return res.user;

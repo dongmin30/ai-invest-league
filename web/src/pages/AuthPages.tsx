@@ -1,6 +1,6 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
-import { errorMessage } from '../api/client';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { api, errorMessage } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { Footer } from '../components/Layout';
 import ThemeToggle from '../components/ThemeToggle';
@@ -89,11 +89,27 @@ export function LoginPage() {
 
 export function RegisterPage() {
   const { register } = useAuth();
+  const [params] = useSearchParams();
+  // `/register?code=XXXX` (the share link) fills the code in.
+  const [signupCode, setSignupCode] = useState(() => params.get('code') ?? '');
+  const [codeRequired, setCodeRequired] = useState<boolean | null>(null);
   const [email, setEmail] = useState('');
   const [nickname, setNickname] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .signupOptions()
+      .then((o) => alive && setCodeRequired(o.signup_code_required))
+      // Unknown: show the field anyway; the server ignores a code it does not need.
+      .catch(() => alive && setCodeRequired(true));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -103,7 +119,7 @@ export function RegisterPage() {
     setBusy(true);
     setError(null);
     try {
-      await register(email.trim(), password, nick);
+      await register(email.trim(), password, nick, codeRequired ? signupCode.trim() : undefined);
     } catch (err) {
       setError(errorMessage(err));
       setBusy(false);
@@ -114,6 +130,20 @@ export function RegisterPage() {
     <AuthShell title="회원가입" subtitle="가입 후 바로 공식 리그에 참가할 수 있습니다">
       <form className="space-y-4" onSubmit={submit}>
         {error && <Alert tone="error">{error}</Alert>}
+        {codeRequired && (
+          <Field label="입장코드" hint="초대한 사람에게 받은 코드를 입력하세요.">
+            <input
+              className={`${inputClass} font-mono uppercase tracking-widest`}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              required
+              maxLength={100}
+              value={signupCode}
+              onChange={(e) => setSignupCode(e.target.value)}
+            />
+          </Field>
+        )}
         <Field label="이메일">
           <input className={inputClass} type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
@@ -139,7 +169,7 @@ export function RegisterPage() {
             onChange={(e) => setPassword(e.target.value)}
           />
         </Field>
-        <button type="submit" className={`${btn.primary} w-full`} disabled={busy}>
+        <button type="submit" className={`${btn.primary} w-full`} disabled={busy || codeRequired === null}>
           {busy ? '가입 중…' : '가입하기'}
         </button>
       </form>

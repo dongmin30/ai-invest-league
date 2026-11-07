@@ -1,8 +1,12 @@
 // `npm run share`: build the web app, start the server (실제 시세, server/data 의 DB) with
 // ENV_OVERLAY=.env.share, then open a Cloudflare quick tunnel so teammates can join from anywhere.
 // The server itself still listens on localhost only; the tunnel is the one way in.
+// Registering needs a signup code (입장코드): SIGNUP_CODE from the env files, or a fresh one per run.
 import { spawn, spawnSync } from 'node:child_process';
+import { randomInt } from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
+import dotenv from 'dotenv';
 
 const PORT = 8787;
 const LOCAL = `http://localhost:${PORT}`;
@@ -38,6 +42,39 @@ console.log('[share] 웹 빌드 중…');
 const build = spawnSync('npm run build', { stdio: 'inherit', shell: true });
 if (build.status !== 0) process.exit(build.status ?? 1);
 
+/** SIGNUP_CODE as the server will see it: shell, then .env, server/.env, .env.share (later files win). */
+function configuredSignupCode() {
+  let value = process.env.SIGNUP_CODE;
+  for (const file of ['.env', 'server/.env', '.env.share']) {
+    if (!fs.existsSync(file)) continue;
+    const parsed = dotenv.parse(fs.readFileSync(file));
+    if (file === '.env.share' && parsed.SIGNUP_CODE?.trim()) {
+      console.error('[share] .env.share 는 git 에 올라가는 파일입니다. SIGNUP_CODE 는 .env 에 넣어 주세요.');
+      process.exit(1);
+    }
+    if ('SIGNUP_CODE' in parsed) value = parsed.SIGNUP_CODE;
+  }
+  return value?.trim() || null;
+}
+
+// No ambiguous characters (0/O, 1/I/L); 31^8 ≈ 8.5×10^11 codes against 10 tries per minute per IP.
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+function generateSignupCode() {
+  const chars = Array.from({ length: 8 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]);
+  return `${chars.slice(0, 4).join('')}-${chars.slice(4).join('')}`;
+}
+
+let signupCode = configuredSignupCode();
+let overlay = '.env.share';
+if (!signupCode) {
+  // An env file may set SIGNUP_CODE= (empty), which would override a shell variable, so the
+  // generated code goes into an overlay (loaded last, with override) next to the DB instead.
+  signupCode = generateSignupCode();
+  overlay = path.join('server', 'data', 'share.env');
+  fs.mkdirSync(path.dirname(overlay), { recursive: true });
+  fs.writeFileSync(overlay, `${fs.readFileSync('.env.share', 'utf8')}\nSIGNUP_CODE=${signupCode}\n`);
+}
+
 const children = [];
 let stopping = false;
 function killChildren() {
@@ -62,7 +99,7 @@ process.on('exit', killChildren);
 const server = spawn('npm start', {
   stdio: 'inherit',
   shell: true,
-  env: { ...process.env, ENV_OVERLAY: '.env.share' },
+  env: { ...process.env, ENV_OVERLAY: overlay },
 });
 children.push(server);
 server.on('exit', (code) => {
@@ -88,6 +125,16 @@ if (!(await waitForServer())) {
   stop(1);
 }
 
+// Fail closed: never open the tunnel unless the server really demands the code (an ENV_OVERLAY line
+// in .env, for example, would make it skip the overlay that carries SIGNUP_CODE).
+const options = await fetch(`${LOCAL}/api/auth/signup-options`)
+  .then((r) => r.json())
+  .catch(() => null);
+if (options?.signup_code_required !== true) {
+  console.error('[share] 서버가 입장코드를 요구하지 않아 외부 공개를 중단합니다. .env 의 ENV_OVERLAY/SIGNUP_CODE 를 확인해 주세요.');
+  stop(1);
+}
+
 const tunnel = spawn(cloudflared, ['tunnel', '--no-autoupdate', '--url', LOCAL], { stdio: ['ignore', 'pipe', 'pipe'] });
 children.push(tunnel);
 let announced = false;
@@ -98,7 +145,20 @@ const onTunnelOutput = (chunk) => {
   if (match && !announced) {
     announced = true;
     const line = '='.repeat(64);
-    console.log(`\n${line}\n  외부 접속 주소: ${match[0]}\n  이 PC: ${LOCAL}\n  종료: Ctrl+C (주소는 실행할 때마다 바뀝니다)\n${line}\n`);
+    console.log(
+      [
+        '',
+        line,
+        `  외부 접속 주소: ${match[0]}`,
+        `  입장코드(회원가입): ${signupCode}`,
+        `  가입 링크(코드 포함): ${match[0]}/register?code=${encodeURIComponent(signupCode)}`,
+        `  이 PC: ${LOCAL}`,
+        '  이미 가입한 사람은 코드 없이 로그인합니다.',
+        '  종료: Ctrl+C (주소는 실행할 때마다 바뀝니다)',
+        line,
+        '',
+      ].join('\n'),
+    );
   }
   if (/\b(ERR|error)\b/.test(text) && !/ERR Cannot determine default origin certificate/.test(text)) {
     process.stderr.write(`[tunnel] ${text}`);

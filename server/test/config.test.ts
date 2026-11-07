@@ -37,4 +37,13 @@ describe('config', () => {
     expect((await loadConfig({ TRUST_PROXY: '127.0.0.1' })).trustProxy).toBe('127.0.0.1');
     await expect(loadConfig({ TRUST_PROXY: 'every$thing' })).rejects.toThrow(/TRUST_PROXY/);
   });
+
+  it('reads SIGNUP_CODE, treating blank as unset and rejecting codes under 8 characters', async () => {
+    expect((await loadConfig({ SIGNUP_CODE: undefined })).signupCode).toBeUndefined();
+    expect((await loadConfig({ SIGNUP_CODE: '   ' })).signupCode).toBeUndefined();
+    expect((await loadConfig({ SIGNUP_CODE: ' K7QM-4XPA ' })).signupCode).toBe('K7QM-4XPA');
+    await expect(loadConfig({ SIGNUP_CODE: '1234' })).rejects.toThrow(/SIGNUP_CODE/);
+    await expect(loadConfig({ SIGNUP_CODE: 'ABC-DEF-G' })).rejects.toThrow(/SIGNUP_CODE/);
+    expect((await loadConfig({ SIGNUP_CODE: 'ABCD-EFGH' })).signupCode).toBe('ABCD-EFGH');
+  });
 });

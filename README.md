@@ -26,6 +26,7 @@ npm run dev               # 서버 http://localhost:8787 + 웹 http://localhost:
 | `npm run typecheck` | 서버·웹 타입 검사 |
 | `npm run build` | 웹을 `web/dist`로 빌드 |
 | `npm start` | 서버 실행 (빌드된 `web/dist`를 함께 서빙) |
+| `npm run share` | 빌드 후 서버를 띄우고 Cloudflare 임시 주소로 외부 공개 (팀원과 함께 테스트, 회원가입에 입장코드 필요) |
 
 배포처럼 한 프로세스로 띄우려면 `npm run build` 후 `npm start` 하고 http://localhost:8787 에 접속합니다 (서버가 `web/dist`를 서빙).
 

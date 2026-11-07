@@ -1,9 +1,10 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import type { CookieSerializeOptions } from '@fastify/cookie';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { User } from '../../../shared/api-types';
-import { config } from '../config';
+import type { SignupOptions, User } from '../../../shared/api-types';
+import { config, normalizeSignupCode } from '../config';
 import { ApiHttpError, forbidden, unauthorized } from './errors';
 import { createUser, findUserByEmail, getUserById } from './users';
 
@@ -40,6 +41,7 @@ const RegisterBody = z.object({
     .trim()
     .min(2, '닉네임은 2~20자여야 합니다.')
     .max(20, '닉네임은 2~20자여야 합니다.'),
+  signup_code: z.string().max(100).optional(),
 });
 
 const LoginBody = z.object({
@@ -55,6 +57,15 @@ function cookieOptions(): CookieSerializeOptions {
     secure: config.cookieSecure,
     maxAge: SESSION_SEC,
   };
+}
+
+/** True when no signup code is configured or `given` matches it (constant-time on digests). */
+function signupCodeMatches(given: string | undefined): boolean {
+  const expected = config.signupCode;
+  if (!expected) return true;
+  if (given === undefined) return false;
+  const digest = (s: string) => createHash('sha256').update(normalizeSignupCode(s)).digest();
+  return timingSafeEqual(digest(given), digest(expected));
 }
 
 let dummyHash: string | undefined;
@@ -97,12 +108,20 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/auth/register', limited, async (req, reply) => {
     const body = RegisterBody.parse(req.body);
+    // Checked before the email lookup, so outsiders cannot probe which emails are registered.
+    if (!signupCodeMatches(body.signup_code)) {
+      throw new ApiHttpError(403, 'invalid_signup_code', '입장코드가 올바르지 않습니다. 초대한 사람에게 코드를 확인해 주세요.');
+    }
     const hash = await bcrypt.hash(body.password, BCRYPT_COST);
     const user = createUser(body.email, hash, body.nickname);
     if (!user) throw new ApiHttpError(409, 'email_taken', '이미 가입된 이메일입니다.');
     startSession(app, reply, user);
     return { user };
   });
+
+  app.get('/auth/signup-options', async (): Promise<SignupOptions> => ({
+    signup_code_required: Boolean(config.signupCode),
+  }));
 
   app.post('/auth/login', limited, async (req, reply) => {
     const body = LoginBody.parse(req.body);
