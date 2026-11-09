@@ -20,7 +20,7 @@ import { computeRankings } from '../engine/ranking';
 import { agentMarkets, getLeagueRow, getParticipantRow, sql, type AgentRow, type LeagueRow } from '../engine/store';
 import { bus } from '../lib/bus';
 import { now } from '../lib/time';
-import { isLeagueOpen, isMarketOpen } from '../market/calendar';
+import { isLeagueTradable, isMarketTradable } from '../market/calendar';
 import { getDailyCloses } from '../market/collector';
 import { getFx } from '../market/fx';
 import { getQuote } from '../market/quoteCache';
@@ -89,7 +89,7 @@ function candidateRow(symbol: string, leagueMarket: LeagueSummary['market'], at:
     symbol,
     name: info?.name ?? symbol,
     market,
-    market_open: isMarketOpen(market, at),
+    market_open: isMarketTradable(market, at),
     kind: info?.kind ?? 'stock',
     leverage: info?.leverage ?? 1,
     ...(info?.underlying ? { underlying: info.underlying } : {}),
@@ -176,8 +176,8 @@ export function selectCandidates(
   if (league.market !== 'ALL') {
     rankMarket(symbolsFor(league.market), picked, { slots, movers: CANDIDATE_MOVERS, leveraged: MAX_LEVERAGED_CANDIDATES });
   } else {
-    const krOpen = isMarketOpen('KR', at);
-    const usOpen = isMarketOpen('US', at);
+    const krOpen = isMarketTradable('KR', at);
+    const usOpen = isMarketTradable('US', at);
     const [primary, other]: Market[] = krOpen || !usOpen ? ['KR', 'US'] : ['US', 'KR'];
     const primarySlots = krOpen !== usOpen ? Math.ceil(slots * OPEN_MARKET_SHARE) : Math.ceil(slots / 2);
     rankMarket(symbolsFor(primary!), picked, {
@@ -349,8 +349,8 @@ export function buildDecisionInput(participantId: number): DecisionInput {
     portfolio,
     pendingOrders,
     candidates: selectCandidates(summary, portfolio, pendingOrders, at),
-    marketOpen: isLeagueOpen(league.market, at),
-    marketsOpen: Object.fromEntries(markets.map((m) => [m, isMarketOpen(m, at)])),
+    marketOpen: isLeagueTradable(league.market, at),
+    marketsOpen: Object.fromEntries(markets.map((m) => [m, isMarketTradable(m, at)])),
     fx: league.market === 'ALL' ? getFx(at) : null,
     now: at,
   };
@@ -501,7 +501,7 @@ export async function runDueAgents(): Promise<void> {
     ).all(at, at, at) as DueRow[];
 
     for (const row of rows) {
-      if (!isLeagueOpen(row.market, now()) || inFlight.has(row.participant_id)) continue;
+      if (!isLeagueTradable(row.market, now()) || inFlight.has(row.participant_id)) continue;
       try {
         await runDecision(row.participant_id);
       } catch (err) {

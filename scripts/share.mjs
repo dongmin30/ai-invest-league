@@ -160,8 +160,11 @@ const onTunnelOutput = (chunk) => {
       ].join('\n'),
     );
   }
-  if (/\b(ERR|error)\b/.test(text) && !/ERR Cannot determine default origin certificate/.test(text)) {
-    process.stderr.write(`[tunnel] ${text}`);
+  for (const line of text.split(/\r?\n/)) {
+    if (!/\b(ERR|error)\b/.test(line) || /ERR Cannot determine default origin certificate/.test(line)) continue;
+    // A viewer closed the tab or the browser reconnected its live stream: normal, not a failure.
+    if (/stream \d+ canceled by remote with error code 0/.test(line)) continue;
+    process.stderr.write(`[tunnel] ${line}\n`);
   }
 };
 tunnel.stdout.on('data', onTunnelOutput);

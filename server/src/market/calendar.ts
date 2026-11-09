@@ -1,4 +1,4 @@
-import type { LeagueMarket, Market } from '../../../shared/api-types';
+import type { LeagueMarket, Market, MarketSession } from '../../../shared/api-types';
 import { config } from '../config';
 import { now } from '../lib/time';
 import { isHoliday } from './holidays';
@@ -19,6 +19,13 @@ interface Session {
 const SESSIONS: Record<Market, Session> = {
   KR: { timeZone: 'Asia/Seoul', open: [9, 0], close: [15, 30] },
   US: { timeZone: 'America/New_York', open: [9, 30], close: [16, 0] },
+};
+
+// Pre- and after-market hours, where prices update and orders fill (market-local wall time). Only
+// the US has them: Yahoo carries no 넥스트레이드 prices for KR symbols. League start and end stay on
+// the regular sessions above.
+const EXTENDED: Partial<Record<Market, { open: [number, number]; close: [number, number] }>> = {
+  US: { open: [4, 0], close: [20, 0] },
 };
 
 const DAY_MS = 86_400_000;
@@ -137,6 +144,40 @@ export function isMarketOpen(market: Market, at: number = now()): boolean {
   return at >= open && at <= close;
 }
 
+/** The KIS quote endpoints used here return regular-session prices only, so a KIS setup has no extended hours. */
+function extendedQuotesAvailable(): boolean {
+  return !(config.priceProvider === 'kis' && config.kisAppKey && config.kisAppSecret);
+}
+
+/** Extended-hours bounds on `date`, or null when the market has none. */
+function extendedBounds(market: Market, date: string): { open: number; close: number } | null {
+  const ext = EXTENDED[market];
+  if (!ext || config.simAlwaysOpen || !extendedQuotesAvailable()) return null;
+  const { timeZone } = SESSIONS[market];
+  return {
+    open: zonedTime(timeZone, date, ext.open[0], ext.open[1]),
+    close: zonedTime(timeZone, date, ext.close[0], ext.close[1]),
+  };
+}
+
+/** Which part of the trading day `at` falls in. */
+export function marketSession(market: Market, at: number = now()): MarketSession {
+  if (isMarketOpen(market, at)) return 'regular';
+  const date = marketDate(market, at);
+  if (!isTradingDay(market, date)) return 'closed';
+  const ext = extendedBounds(market, date);
+  if (!ext) return 'closed';
+  const { open, close } = sessionBounds(market, date);
+  if (at >= ext.open && at < open) return 'pre';
+  if (at > close && at <= ext.close) return 'post';
+  return 'closed';
+}
+
+/** Whether prices update and orders fill now: the regular session or extended hours. */
+export function isMarketTradable(market: Market, at: number = now()): boolean {
+  return marketSession(market, at) !== 'closed';
+}
+
 /**
  * Close of the session whose closing print `at` may be: a trading day's close when `at` falls
  * in (close, close + POST_CLOSE_FETCH_MS], else null. Providers stamp the closing auction
@@ -170,6 +211,24 @@ export function nextOpen(market: Market, at: number = now()): number {
     open = sessionBounds(market, date).open;
   }
   return open;
+}
+
+/** Start of the next tradable window strictly after `at` (extended hours count; `at` itself with simAlwaysOpen). */
+export function nextTradable(market: Market, at: number = now()): number {
+  if (config.simAlwaysOpen) return at;
+  const start = (date: string) => (extendedBounds(market, date) ?? sessionBounds(market, date)).open;
+  let date = tradingDayOnOrAfter(market, marketDate(market, at));
+  if (start(date) <= at) date = tradingDayOnOrAfter(market, shiftDate(date, 1));
+  return start(date);
+}
+
+/** End of the part of the day `at` is in: pre-market → the regular open, after-market → its end, else nextClose. */
+export function currentSessionEnd(market: Market, at: number = now()): number {
+  const session = marketSession(market, at);
+  const date = marketDate(market, at);
+  if (session === 'pre') return sessionBounds(market, date).open;
+  if (session === 'post') return extendedBounds(market, date)!.close;
+  return nextClose(market, at);
 }
 
 /** End of the current session, or of the next one when the market is closed. */
@@ -211,6 +270,12 @@ const MARKETS: Market[] = ['KR', 'US'];
 export function isLeagueOpen(market: LeagueMarket, at: number = now()): boolean {
   if (market !== 'ALL') return isMarketOpen(market, at);
   return MARKETS.some((m) => isMarketOpen(m, at));
+}
+
+/** Whether the league's market can trade now, extended hours included (ALL: either market). */
+export function isLeagueTradable(market: LeagueMarket, at: number = now()): boolean {
+  if (market !== 'ALL') return isMarketTradable(market, at);
+  return MARKETS.some((m) => isMarketTradable(m, at));
 }
 
 /**

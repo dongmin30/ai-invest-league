@@ -1,7 +1,8 @@
 import type { Quote } from '../../../../shared/api-types';
+import { closingPrintSession, marketSession } from '../calendar';
 import type { SymbolInfo } from '../symbols';
 import { backoffMs, createLimiter, errorMessage, sleep } from './http';
-import type { DailyBar, FetchLike, FxTick, PriceProvider } from './types';
+import type { DailyBar, FetchLike, FxTick, PriceProvider, ProviderQuote } from './types';
 
 // Yahoo Finance chart JSON (keyless, unofficial). Requests need a browser User-Agent,
 // otherwise Yahoo answers 429. KRX prices may be delayed relative to the exchange.
@@ -12,7 +13,8 @@ import type { DailyBar, FetchLike, FxTick, PriceProvider } from './types';
 // chart endpoint; a chunk whose call fails as a whole is skipped (no per-symbol fallback, which
 // would turn one 429 into 20 more requests). A 429 that survives the retry pauses every request
 // of the provider for YAHOO_COOLDOWN_MS (logged once); the collector keeps its cached quotes.
-// Spark daily bars carry closes only (open/high/low/volume are null).
+// Spark daily bars carry closes only (open/high/low/volume are null). Quotes are requested with
+// pre- and after-market bars; `meta` still describes only the regular session (see extendedTrade).
 
 const BASE_URL = 'https://query1.finance.yahoo.com/v8/finance/chart/';
 const SPARK_URL = 'https://query1.finance.yahoo.com/v7/finance/spark';
@@ -20,6 +22,8 @@ const SPARK_URL = 'https://query1.finance.yahoo.com/v7/finance/spark';
 export const YAHOO_FX_TICKER = 'KRW=X';
 /** Yahoo answers HTTP 400 for spark requests with more than 20 symbols. */
 export const SPARK_MAX_SYMBOLS = 20;
+/** Adds pre- and after-market bars to a 1-day intraday response; daily bars never use it. */
+const PRE_POST = '&includePrePost=true';
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const MAX_CONCURRENT = 4;
@@ -94,29 +98,58 @@ export function parseYahooSpark(json: unknown): Map<string, ChartResult> {
   return out;
 }
 
+/**
+ * The newest pre- or after-market trade, when quotes were requested with includePrePost and that
+ * trade is newer than the regular session's. `meta` only ever carries the regular session. Trades
+ * in the closing-print window are ignored so leagues finish on the official close.
+ */
+function extendedTrade(result: ChartResult, info: SymbolInfo): { price: number; ts: number; session: 'pre' | 'post' } | undefined {
+  const last = lastValue(result.indicators?.quote?.[0]?.close);
+  const tsSec = last && result.timestamp?.[last.index];
+  const regularTime = result.meta?.regularMarketTime;
+  if (!last || last.value <= 0 || !isNum(tsSec) || !isNum(regularTime) || tsSec <= regularTime) return undefined;
+  const ts = tsSec * 1000;
+  const session = marketSession(info.market, ts);
+  if ((session !== 'pre' && session !== 'post') || closingPrintSession(info.market, ts) !== null) return undefined;
+  return { price: round(last.value, 4), ts, session };
+}
+
 /** Parses a `interval=1m&range=1d` chart response into a Quote. Throws YahooError if it has no price. */
-export function parseYahooQuote(json: unknown, info: SymbolInfo): Quote {
+export function parseYahooQuote(json: unknown, info: SymbolInfo): ProviderQuote {
   return quoteFromResult(chartResult(json), info);
 }
 
-function quoteFromResult(result: ChartResult, info: SymbolInfo): Quote {
+function quoteFromResult(result: ChartResult, info: SymbolInfo): ProviderQuote {
   const meta = result.meta ?? {};
   const closes = result.indicators?.quote?.[0]?.close;
   const lastClose = lastValue(closes);
 
-  const price = isNum(meta.regularMarketPrice) && meta.regularMarketPrice > 0 ? meta.regularMarketPrice : lastClose?.value;
+  const extended = extendedTrade(result, info);
+  const price = extended?.price ?? (isNum(meta.regularMarketPrice) && meta.regularMarketPrice > 0 ? meta.regularMarketPrice : lastClose?.value);
   if (!isNum(price) || price <= 0) throw new YahooError(`No price for ${info.yahoo}`);
 
   const lastTs = lastClose ? result.timestamp?.[lastClose.index] : undefined;
   const tsSec = isNum(meta.regularMarketTime) ? meta.regularMarketTime : isNum(lastTs) ? lastTs : undefined;
   if (tsSec === undefined) throw new YahooError(`No timestamp for ${info.yahoo}`);
 
-  const prevClose = [meta.previousClose, meta.chartPreviousClose].find((v): v is number => isNum(v) && v > 0);
-  const changePct = prevClose
-    ? ((price - prevClose) / prevClose) * 100
-    : isNum(meta.regularMarketChangePercent)
-      ? meta.regularMarketChangePercent
-      : 0;
+  // Before the open the latest regular close is yesterday's; `previousClose` is the day before that.
+  const prevClose = [extended?.session === 'pre' ? meta.regularMarketPrice : undefined, meta.previousClose, meta.chartPreviousClose].find(
+    (v): v is number => isNum(v) && v > 0,
+  );
+  const changeFrom = (p: number, base: number | undefined) =>
+    base ? ((p - base) / base) * 100 : isNum(meta.regularMarketChangePercent) ? meta.regularMarketChangePercent : 0;
+  const changePct = changeFrom(price, prevClose);
+
+  // Present only with an extended trade, whose branch above required both of these meta fields.
+  const lastClosePrev = [meta.previousClose, meta.chartPreviousClose].find((v): v is number => isNum(v) && v > 0);
+  const regular =
+    extended && isNum(meta.regularMarketPrice) && meta.regularMarketPrice > 0
+      ? {
+          price: meta.regularMarketPrice,
+          change_pct: round(changeFrom(meta.regularMarketPrice, lastClosePrev), 2),
+          ts: meta.regularMarketTime! * 1000,
+        }
+      : undefined;
 
   return {
     symbol: info.symbol,
@@ -124,8 +157,9 @@ function quoteFromResult(result: ChartResult, info: SymbolInfo): Quote {
     price,
     change_pct: round(changePct, 2),
     volume: isNum(meta.regularMarketVolume) ? meta.regularMarketVolume : 0,
-    ts: tsSec * 1000,
+    ts: extended?.ts ?? tsSec * 1000,
     source: 'yahoo',
+    ...(regular ? { regular } : {}),
   };
 }
 
@@ -266,16 +300,16 @@ export function createYahooProvider(opts: YahooOptions = {}): PriceProvider {
     }
   }
 
-  const getChart = (ticker: string, interval: string, range: string) =>
-    getJson(`${BASE_URL}${encodeURIComponent(ticker)}?interval=${interval}&range=${range}`, ticker);
+  const getChart = (ticker: string, interval: string, range: string, extra = '') =>
+    getJson(`${BASE_URL}${encodeURIComponent(ticker)}?interval=${interval}&range=${range}${extra}`, ticker);
 
-  /** One spark call (daily interval) per chunk of at most SPARK_MAX_SYMBOLS; a chunk whose call failed has null results. */
-  function sparkChunks(symbols: SymbolInfo[], range: string) {
+  /** One spark call per chunk of at most SPARK_MAX_SYMBOLS; a chunk whose call failed has null results. */
+  function sparkChunks(symbols: SymbolInfo[], range: string, query = 'interval=1d') {
     return Promise.all(
       chunked(symbols, SPARK_MAX_SYMBOLS).map(async (chunk) => {
         const tickers = [...new Set(chunk.map((s) => s.yahoo))].map(encodeURIComponent).join(',');
         try {
-          const json = await getJson(`${SPARK_URL}?symbols=${tickers}&range=${range}&interval=1d`, `spark(${chunk.length})`);
+          const json = await getJson(`${SPARK_URL}?symbols=${tickers}&range=${range}&${query}`, `spark(${chunk.length})`);
           return { chunk, results: parseYahooSpark(json) as Map<string, ChartResult> | null };
         } catch (err) {
           if (!isRateLimited(err)) console.warn(`[yahoo] spark batch of ${chunk.length} failed: ${errorMessage(err)}`);
@@ -285,11 +319,11 @@ export function createYahooProvider(opts: YahooOptions = {}): PriceProvider {
     );
   }
 
-  async function chartQuotes(symbols: SymbolInfo[]): Promise<Quote[]> {
+  async function chartQuotes(symbols: SymbolInfo[]): Promise<ProviderQuote[]> {
     const settled = await Promise.allSettled(
-      symbols.map(async (info) => parseYahooQuote(await getChart(info.yahoo, '1m', '1d'), info)),
+      symbols.map(async (info) => parseYahooQuote(await getChart(info.yahoo, '1m', '1d', PRE_POST), info)),
     );
-    const quotes: Quote[] = [];
+    const quotes: ProviderQuote[] = [];
     settled.forEach((r, i) => {
       if (r.status === 'fulfilled') quotes.push(r.value);
       else if (!isRateLimited(r.reason)) console.warn(`[yahoo] quote ${symbols[i]!.yahoo} failed: ${errorMessage(r.reason)}`);
@@ -303,9 +337,9 @@ export function createYahooProvider(opts: YahooOptions = {}): PriceProvider {
     async fetchQuotes(symbols) {
       if (paused()) return []; // the collector keeps the cached quotes
       if (!batch) return chartQuotes(symbols);
-      const found = new Map<string, Quote>();
+      const found = new Map<string, ProviderQuote>();
       const missing: SymbolInfo[] = [];
-      for (const { chunk, results } of await sparkChunks(symbols, '1d')) {
+      for (const { chunk, results } of await sparkChunks(symbols, '1d', `interval=5m${PRE_POST}`)) {
         // A failed call (HTTP error after the retry, network error, pause) affects the whole chunk:
         // those symbols keep their cached quotes until the next tick instead of 20 chart calls.
         if (!results) continue;

@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { Market, MarketStatus } from '../../../shared/api-types';
 import { config } from '../config';
 import { now } from '../lib/time';
-import { isMarketOpen, nextClose, nextOpen } from './calendar';
+import { currentSessionEnd, marketSession, nextTradable } from './calendar';
 import { createKisProvider } from './providers/kis';
 import { createSimProvider } from './providers/sim';
 import type { PriceProvider } from './providers/types';
@@ -49,14 +49,16 @@ const NOTES: Record<PriceProvider['name'], string> = {
 
 export function marketStatus(market: Market): MarketStatus {
   const at = now();
-  const open = isMarketOpen(market, at);
+  const session = marketSession(market, at);
+  const open = session !== 'closed';
   const provider = getProvider().name;
   const note = config.simAlwaysOpen ? `${NOTES[provider]} · 데모 모드(장 시간 무시)` : NOTES[provider];
   return {
     market,
     open,
-    next_open: open ? null : nextOpen(market, at),
-    next_close: nextClose(market, at),
+    session,
+    next_open: open ? null : nextTradable(market, at),
+    next_close: currentSessionEnd(market, at),
     provider,
     note,
   };

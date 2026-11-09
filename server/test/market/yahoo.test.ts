@@ -130,7 +130,7 @@ describe('createYahooProvider', () => {
     const quotes = await createYahooProvider({ fetchImpl, retryDelayMs: 1, batch: false }).fetchQuotes([apple]);
     expect(quotes).toHaveLength(1);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(calls[0]!.url).toBe('https://query1.finance.yahoo.com/v8/finance/chart/AAPL?interval=1m&range=1d');
+    expect(calls[0]!.url).toBe('https://query1.finance.yahoo.com/v8/finance/chart/AAPL?interval=1m&range=1d&includePrePost=true');
     expect((calls[0]!.init?.headers as Record<string, string>)['User-Agent']).toMatch(/^Mozilla\/5\.0/);
   });
 
@@ -213,7 +213,7 @@ describe('spark batching (real responses, 2026-10-30)', () => {
     const quotes = await createYahooProvider({ fetchImpl }).fetchQuotes([spy, kodexLev, tqqq, samsung]);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(fetchImpl.mock.calls[0]![0]).toBe(
-      'https://query1.finance.yahoo.com/v7/finance/spark?symbols=SPY,122630.KS,TQQQ,005930.KS&range=1d&interval=1d',
+      'https://query1.finance.yahoo.com/v7/finance/spark?symbols=SPY,122630.KS,TQQQ,005930.KS&range=1d&interval=5m&includePrePost=true',
     );
     expect(quotes.map((q) => q.symbol)).toEqual(['SPY', '122630', 'TQQQ', '005930']);
     expect(quotes[1]).toEqual({
@@ -269,7 +269,7 @@ describe('spark batching (real responses, 2026-10-30)', () => {
     const sparkCalls = fetchImpl.mock.calls.filter(([u]) => u.includes('/spark'));
     const chartCalls = fetchImpl.mock.calls.filter(([u]) => u.includes('/chart/'));
     expect(sparkCalls).toHaveLength(3);
-    expect(chartCalls.map(([u]) => u)).toEqual(['https://query1.finance.yahoo.com/v8/finance/chart/MISSINGX?interval=1m&range=1d']);
+    expect(chartCalls.map(([u]) => u)).toEqual(['https://query1.finance.yahoo.com/v8/finance/chart/MISSINGX?interval=1m&range=1d&includePrePost=true']);
   });
 
   it('pauses every Yahoo request for 60 s after a 429 that survives the retry, logging once', async () => {

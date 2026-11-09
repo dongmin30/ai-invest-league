@@ -50,6 +50,7 @@ describe('marketStatus', () => {
     expect(marketStatus('KR')).toEqual({
       market: 'KR',
       open: true,
+      session: 'regular',
       next_open: null,
       next_close: Date.UTC(2026, 9, 19, 6, 30),
       provider: 'yahoo',
@@ -60,7 +61,8 @@ describe('marketStatus', () => {
   it('reports a closed market with the next session', () => {
     const s = marketStatus('US');
     expect(s.open).toBe(false);
-    expect(s.next_open).toBe(Date.UTC(2026, 9, 19, 13, 30)); // Mon 09:30 EDT
+    expect(s.session).toBe('closed');
+    expect(s.next_open).toBe(Date.UTC(2026, 9, 19, 8, 0)); // Mon 04:00 EDT, the pre-market
     expect(s.next_close).toBe(Date.UTC(2026, 9, 19, 20, 0));
   });
 

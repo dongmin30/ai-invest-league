@@ -80,9 +80,13 @@ export interface FxQuote {
   stale: boolean; // older than 30 minutes: US fills in 통합 leagues wait (valuation keeps using it)
 }
 
+export type MarketSession = 'pre' | 'regular' | 'post' | 'closed';
+
 export interface MarketStatus {
   market: Market;
+  /** Orders can fill now: the regular session or extended hours (see `session`). */
   open: boolean;
+  session: MarketSession;
   next_open: number | null;
   next_close: number | null;
   provider: 'yahoo' | 'kis' | 'sim';

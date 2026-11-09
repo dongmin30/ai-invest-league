@@ -321,6 +321,18 @@ describe('runDueAgents', () => {
     expect(db.prepare('SELECT COUNT(*) FROM decision_logs WHERE participant_id = ?').pluck().get(participants.Off)).toBe(0);
   });
 
+  it('also runs in the US pre-market, reporting the market as open', async () => {
+    setClock(US_OPEN);
+    agentLeague('US', [{ name: 'On', provider: 'claude' }]);
+    const provider = fixed({ market_view: '관망', orders: [] });
+    setProviderResolver(() => provider);
+
+    setClock(US_OPEN + 24 * HOUR - 90 * MIN); // Tuesday 08:00 EDT
+    await runDueAgents();
+    expect(provider.inputs).toHaveLength(1);
+    expect(provider.inputs[0]).toMatchObject({ marketOpen: true });
+  });
+
   it('never throws, runs sequentially, and keeps going after a failing agent', async () => {
     agentLeague('KR', [
       { name: 'Boom', provider: 'claude' },

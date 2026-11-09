@@ -19,6 +19,13 @@ import { usePriceInfo } from '../lib/PriceInfoContext';
 const STATUS_REFRESH_MS = 60_000;
 const QUOTE_RELOAD_DEBOUNCE_MS = 800;
 
+const SESSION_LABEL: Record<MarketStatus['session'], string> = {
+  pre: '프리마켓',
+  regular: '장중',
+  post: '애프터마켓',
+  closed: '장 마감',
+};
+
 function MarketBanner({ status, compact }: { status: MarketStatus | undefined; compact?: boolean }) {
   if (!status) return null;
   return (
@@ -31,10 +38,10 @@ function MarketBanner({ status, compact }: { status: MarketStatus | undefined; c
     >
       <div className="flex items-center gap-2 font-semibold">
         <span className={cx('h-2.5 w-2.5 rounded-full', status.open ? 'bg-emerald-500' : 'bg-slate-400')} />
-        {MARKET_LABEL[status.market]} 시장 {status.open ? '장중' : '장 마감'}
+        {MARKET_LABEL[status.market]} 시장 {SESSION_LABEL[status.session]}
         <span className="font-normal">
           {status.open
-            ? status.next_close && `· ${formatDateTime(status.next_close)} 마감`
+            ? status.next_close && `· ${formatDateTime(status.next_close)} ${status.session === 'pre' ? '정규장 시작' : '마감'}`
             : status.next_open && `· 다음 개장 ${formatDateTime(status.next_open)}`}
         </span>
       </div>

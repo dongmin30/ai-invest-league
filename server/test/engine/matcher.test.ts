@@ -25,6 +25,7 @@ import {
 } from './helpers';
 
 const SAMSUNG = '005930';
+const DAY = 24 * HOUR;
 
 function holding(participantId: number, symbol: string) {
   return db.prepare('SELECT quantity, avg_price FROM holdings WHERE participant_id = ? AND symbol = ?').get(participantId, symbol);
@@ -301,6 +302,71 @@ describe('matchOrders: league end', () => {
 
     // A quote stamped at or before end_at is still usable.
     expect(matchOrders([quote(SAMSUNG, 89_000, KR_CLOSE - MIN)])).toMatchObject([{ id: order.id, status: 'filled' }]);
+  });
+});
+
+describe('matchOrders: US pre- and after-market', () => {
+  beforeEach(() => resetEngineState());
+  afterEach(() => restoreEngineState());
+
+  const APPLE = 'AAPL';
+  const US_CLOSE = US_OPEN + 6.5 * HOUR; // 16:00 EDT
+  const TUESDAY_PRE = US_OPEN + DAY - 90 * MIN; // Tuesday 08:00 EDT
+
+  function usLeagueAt(at: number, duration_days = 5) {
+    setClock(US_OPEN);
+    const league = activeLeague('US', { duration_days });
+    setClock(at);
+    return league;
+  }
+
+  it('fills at a pre-market quote', () => {
+    const { participantId } = usLeagueAt(TUESDAY_PRE);
+    feed(quote(APPLE, 200));
+    const order = buy(participantId, APPLE, 1);
+    expect(tick(APPLE, 201)).toMatchObject([{ id: order.id, status: 'filled', fill_price: 201 }]);
+  });
+
+  it('fills at an after-market quote past the closing-print window', () => {
+    const { participantId } = usLeagueAt(US_CLOSE + 30 * MIN);
+    feed(quote(APPLE, 200));
+    const order = buy(participantId, APPLE, 1);
+    expect(tick(APPLE, 202)).toMatchObject([{ id: order.id, status: 'filled', fill_price: 202 }]);
+  });
+
+  it('does not fill after the after-market ends, and fills at the next pre-market', () => {
+    const { participantId } = usLeagueAt(US_CLOSE + 4 * HOUR + MIN); // 20:01 EDT
+    feed(quote(APPLE, 200));
+    const order = buy(participantId, APPLE, 1);
+    expect(tick(APPLE, 201)).toEqual([]);
+    setClock(US_CLOSE + 12 * HOUR + MIN); // Tuesday 04:01 EDT
+    expect(tick(APPLE, 203)).toMatchObject([{ id: order.id, status: 'filled', fill_price: 203 }]);
+  });
+
+  it('holds an order placed just after the close until the closing-print window has passed', () => {
+    const { participantId } = usLeagueAt(US_CLOSE + 2 * MIN);
+    feed(quote(APPLE, 200));
+    const order = buy(participantId, APPLE, 1);
+    expect(tick(APPLE, 201)).toEqual([]);
+    setClock(US_CLOSE + POST_CLOSE_FETCH_MS);
+    expect(tick(APPLE, 202)).toMatchObject([{ id: order.id, status: 'filled', fill_price: 202 }]);
+  });
+
+  it('never fills past the end of the league, even in the after-market', () => {
+    const { participantId } = usLeagueAt(US_CLOSE - HOUR, 1);
+    feed(quote(APPLE, 200));
+    const order = buy(participantId, APPLE, 1, 100); // limit below the market: stays pending
+    expect(matchOrders([quote(APPLE, 90, US_CLOSE + POST_CLOSE_FETCH_MS + MIN)])).toEqual([]);
+    expect(getOrderRow(order.id)!.status).toBe('pending');
+  });
+
+  it('leaves KR symbols closed after hours', () => {
+    const { participantId } = activeLeague('KR');
+    feed(quote(SAMSUNG, 70_000));
+    const order = buy(participantId, SAMSUNG, 1);
+    setClock(KR_CLOSE + 2 * HOUR); // 17:30 KST
+    expect(tick(SAMSUNG, 71_000)).toEqual([]);
+    expect(getOrderRow(order.id)!.status).toBe('pending');
   });
 });
 

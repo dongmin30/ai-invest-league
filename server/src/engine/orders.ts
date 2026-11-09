@@ -2,7 +2,7 @@ import type { Order, PlaceOrderRequest } from '../../../shared/api-types';
 import { tx } from '../db/db';
 import { bus } from '../lib/bus';
 import { now } from '../lib/time';
-import { isMarketOpen, leagueTradeDate, nextOpen } from '../market/calendar';
+import { isMarketTradable, leagueTradeDate, nextTradable } from '../market/calendar';
 import { appliedFx, getFx } from '../market/fx';
 import { getQuote } from '../market/quoteCache';
 import { getSymbol } from '../market/symbols';
@@ -61,7 +61,7 @@ export function placeOrder(participantId: number, req: PlaceOrderRequest, source
     const quote = getQuote(info.symbol);
     if (!quote) throw new EngineError('no_quote', '아직 시세가 없어 주문할 수 없습니다.');
 
-    if (!isMarketOpen(info.market, at) && nextOpen(info.market, at) > league.end_at) {
+    if (!isMarketTradable(info.market, at) && nextTradable(info.market, at) > league.end_at) {
       throw new EngineError('session_after_end', '리그 종료 전에 이 종목의 장이 열리지 않습니다.');
     }
     const fx = convertsFx(league.market, info.symbol) ? getFx(at) : undefined;

@@ -2,7 +2,7 @@ import type { Order, Quote } from '../../../shared/api-types';
 import { tx } from '../db/db';
 import { bus } from '../lib/bus';
 import { now } from '../lib/time';
-import { closingPrintSession, isMarketOpen } from '../market/calendar';
+import { closingPrintSession, isMarketTradable } from '../market/calendar';
 import { appliedFx, getFx } from '../market/fx';
 import { convertsFx, ratesFor, roundMoney, tradeCost } from './fees';
 import { reservedCash } from './portfolio';
@@ -89,7 +89,8 @@ function fill(order: PendingRow, quote: Quote, fx: number | null): void {
 
 /**
  * Fills (or rejects on re-check) pending orders against `quotes`. A quote is usable only if
- * it is newer than the order, its timestamp falls inside the market session and it is not
+ * it is newer than the order, its timestamp falls inside the tradable hours (regular session or
+ * extended hours) and it is not
  * after the league's end_at (a league stays 'active' until the next status update).
  * A quote stamped within POST_CLOSE_FETCH_MS after a session close is that session's closing
  * print: it is treated as stamped at the close, so only orders placed by the close can fill
@@ -108,7 +109,8 @@ export function matchOrders(quotes: Quote[]): Order[] {
 
   const changed: { league_id: number; order: Order }[] = [];
   for (const quote of latest.values()) {
-    const sessionTs = isMarketOpen(quote.market, quote.ts) ? quote.ts : closingPrintSession(quote.market, quote.ts);
+    const sessionTs =
+      closingPrintSession(quote.market, quote.ts) ?? (isMarketTradable(quote.market, quote.ts) ? quote.ts : null);
     if (sessionTs === null) continue;
     const pending = sql(
       `SELECT o.*, p.league_id, l.market, l.currency, l.fee_rate, l.tax_rate, l.fx_spread

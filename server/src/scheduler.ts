@@ -8,7 +8,7 @@ import { computeRankings } from './engine/ranking';
 import { takeSnapshots } from './engine/snapshots';
 import { bus } from './lib/bus';
 import { now } from './lib/time';
-import { isMarketOpen, marketDate, POST_CLOSE_FETCH_MS, sessionBounds } from './market/calendar';
+import { isMarketOpen, isMarketTradable, marketDate, POST_CLOSE_FETCH_MS, sessionBounds } from './market/calendar';
 import { createCollector, type Collector } from './market/collector';
 import { getProvider } from './market/index';
 
@@ -89,7 +89,7 @@ export function startScheduler(opts: SchedulerOptions = {}): Scheduler {
   });
 
   const snapshots = guarded('snapshots', () => {
-    snapshotMarkets(MARKETS.filter((m) => isMarketOpen(m, now())));
+    snapshotMarkets(MARKETS.filter((m) => isMarketTradable(m, now())));
   });
 
   const dailyBars = guarded('daily bars', () => collector.loadDailyBars());

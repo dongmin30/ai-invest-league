@@ -1,6 +1,11 @@
 import type { FxQuote, Quote } from '../../../../shared/api-types';
 import type { SymbolInfo } from '../symbols';
 
+/** A quote priced from an extended-hours trade also carries the last regular-session print. */
+export interface ProviderQuote extends Quote {
+  regular?: Pick<Quote, 'price' | 'change_pct' | 'ts'>;
+}
+
 export interface DailyBar {
   /** YYYY-MM-DD in the market's local time zone. */
   date: string;
@@ -17,7 +22,7 @@ export interface PriceProvider {
    * Fetches the latest quote for each symbol. Per-symbol failures are logged and omitted,
    * so the result may be shorter than the input; it rejects only on programming errors.
    */
-  fetchQuotes(symbols: SymbolInfo[]): Promise<Quote[]>;
+  fetchQuotes(symbols: SymbolInfo[]): Promise<ProviderQuote[]>;
   /** Up to `days` most recent daily bars, oldest first. */
   fetchDailyBars(symbol: SymbolInfo, days: number): Promise<DailyBar[]>;
   /**

@@ -1,8 +1,8 @@
-import type { Market, Quote } from '../../../shared/api-types';
+import type { LeagueMarket, Market, Quote } from '../../../shared/api-types';
 import { db, tx } from '../db/db';
 import { bus } from '../lib/bus';
 import { now } from '../lib/time';
-import { closingPrintSession, isMarketOpen, POST_CLOSE_FETCH_MS } from './calendar';
+import { closingPrintSession, isMarketTradable, POST_CLOSE_FETCH_MS } from './calendar';
 import { getFx, setFx, storeFx } from './fx';
 import type { DailyBar, PriceProvider } from './providers/types';
 import { errorMessage } from './providers/http';
@@ -18,7 +18,7 @@ export { POST_CLOSE_FETCH_MS };
 
 export interface Collector {
   /**
-   * Fetches quotes for open markets, markets that closed less than POST_CLOSE_FETCH_MS ago,
+   * Fetches quotes for tradable markets (extended hours included), markets that closed less than POST_CLOSE_FETCH_MS ago,
    * and any symbol without a cached quote; stores and broadcasts them. USD/KRW is fetched once
    * per tick (separate call) while either market is in that window or until this collector has
    * fetched one (a rate seeded from fx_rates at boot does not count); it is stored, cached and
@@ -53,9 +53,18 @@ export function getDailyCloses(symbol: string, n: number): number[] {
   return rows.reverse();
 }
 
+/** Markets of leagues past end_at that have not finished yet (after a late boot, say): those settle on the official close. */
+function marketsAwaitingClose(at: number): Set<Market> {
+  const leagues = db
+    .prepare("SELECT DISTINCT market FROM leagues WHERE status = 'active' AND end_at <= ?")
+    .pluck()
+    .all(at) as LeagueMarket[];
+  return new Set(leagues.flatMap((m) => (m === 'ALL' ? MARKETS : [m])));
+}
+
 export function createCollector(provider: PriceProvider): Collector {
   const openMarkets = (at: number) =>
-    new Set(MARKETS.filter((m) => isMarketOpen(m, at) || closingPrintSession(m, at) !== null));
+    new Set(MARKETS.filter((m) => isMarketTradable(m, at) || closingPrintSession(m, at) !== null));
 
   function symbolsToFetch(open: Set<Market>): SymbolInfo[] {
     // Symbols with no cached quote are fetched even while closed, so prices exist right after boot.
@@ -80,9 +89,11 @@ export function createCollector(provider: PriceProvider): Collector {
   async function collectQuotes(symbols: SymbolInfo[]): Promise<Quote[]> {
     if (symbols.length === 0) return [];
     const wanted = new Set(symbols.map((s) => s.symbol));
-    const quotes = (await provider.fetchQuotes(symbols)).filter(
-      (q) => wanted.has(q.symbol) && Number.isFinite(q.price) && q.price > 0,
-    );
+    const fetched = await provider.fetchQuotes(symbols);
+    const settling = marketsAwaitingClose(now());
+    const quotes = fetched
+      .filter((q) => wanted.has(q.symbol) && Number.isFinite(q.price) && q.price > 0)
+      .map(({ regular, ...q }): Quote => (regular && settling.has(q.market) ? { ...q, ...regular } : q));
     if (quotes.length === 0) return [];
 
     storeQuotes(quotes);
