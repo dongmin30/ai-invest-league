@@ -32,6 +32,14 @@ const DAY_MS = 86_400_000;
 const MAX_SCAN_DAYS = 30;
 /** Markets are still polled this long after the close: closing prints are stamped just after it. */
 export const POST_CLOSE_FETCH_MS = 10 * 60_000;
+/** Yahoo serves KRX prices this late (measured 2026-11-10); US prices and the KIS endpoints are live. */
+const YAHOO_KR_DELAY_MS = 20 * 60_000;
+/** How long after the KR close Yahoo's data (quotes and daily bars) can still lack the closing print. */
+export const YAHOO_KR_CLOSE_WAIT_MS = POST_CLOSE_FETCH_MS + YAHOO_KR_DELAY_MS;
+/** A price read this soon after the KRX open or close may still predate that auction's result (the close has a random end). */
+const KR_AUCTION_SETTLE_MS = 60_000;
+/** KRX trades only by closing call auction for this long before the close, so the last print stops moving. */
+const KR_CLOSING_AUCTION_MS = 10 * 60_000;
 
 export function marketTimeZone(market: Market): string {
   return SESSIONS[market].timeZone;
@@ -160,6 +168,13 @@ function extendedBounds(market: Market, date: string): { open: number; close: nu
   };
 }
 
+/** How far behind the market this setup's quotes for `market` run. */
+export function quoteDelayMs(market: Market): number {
+  if (market !== 'KR' || config.simAlwaysOpen || config.priceProvider === 'sim') return 0;
+  const kis = config.priceProvider !== 'yahoo' && config.kisAppKey && config.kisAppSecret;
+  return kis ? 0 : YAHOO_KR_DELAY_MS;
+}
+
 /** Which part of the trading day `at` falls in. */
 export function marketSession(market: Market, at: number = now()): MarketSession {
   if (isMarketOpen(market, at)) return 'regular';
@@ -189,6 +204,50 @@ export function closingPrintSession(market: Market, at: number): number | null {
   if (!isTradingDay(market, date)) return null;
   const { close } = sessionBounds(market, date);
   return at > close && at <= close + POST_CLOSE_FETCH_MS ? close : null;
+}
+
+/** How long after `market`'s close its closing print can still arrive. */
+export function closingPrintWaitMs(market: Market): number {
+  return POST_CLOSE_FETCH_MS + quoteDelayMs(market);
+}
+
+/** Whether `at` is after today's close but its closing print may not have arrived yet (wall clock, unlike closingPrintSession). */
+export function awaitingClosingPrint(market: Market, at: number): boolean {
+  if (config.simAlwaysOpen) return false;
+  const date = marketDate(market, at);
+  if (!isTradingDay(market, date)) return false;
+  const { close } = sessionBounds(market, date);
+  return at > close && at <= close + closingPrintWaitMs(market);
+}
+
+/**
+ * Whether a live KR price read at `at` may predate an auction result. Live sources stamp quotes
+ * with the fetch time, so such a read would pass for the opening or closing print.
+ */
+export function krAuctionPending(at: number): boolean {
+  if (config.simAlwaysOpen) return false;
+  const date = marketDate('KR', at);
+  if (!isTradingDay('KR', date)) return false;
+  const { open, close } = sessionBounds('KR', date);
+  return (at >= open && at < open + KR_AUCTION_SETTLE_MS) || (at >= close - KR_CLOSING_AUCTION_MS && at < close + KR_AUCTION_SETTLE_MS);
+}
+
+/**
+ * Until when a pending order may not be canceled, or null when it may be now. With delayed quotes
+ * the price an order fills at is already public while the quote is still on its way, so canceling
+ * in that gap would be a free look at the fill. A new order waits for its own print; once the
+ * session has closed, or for an order placed within `lag` of the close, every order placed before
+ * the close waits for the closing print. `lag` allows two collect intervals for the quote to land.
+ */
+export function cancelLockedUntil(market: Market, createdAt: number, at: number = now()): number | null {
+  const delay = quoteDelayMs(market);
+  const date = marketDate(market, at);
+  if (delay === 0 || !isTradingDay(market, date)) return null;
+  const { open, close } = sessionBounds(market, date);
+  if (at < open || createdAt > close) return null;
+  const lag = delay + 2 * config.collectIntervalSec * 1000;
+  const until = at > close || createdAt > close - lag ? close + lag : Math.max(createdAt, open) + lag;
+  return at < until ? until : null;
 }
 
 /** First trading date on or after `date`. */

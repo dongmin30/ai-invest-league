@@ -54,7 +54,7 @@ describe('marketStatus', () => {
       next_open: null,
       next_close: Date.UTC(2026, 9, 19, 6, 30),
       provider: 'yahoo',
-      note: '시세 출처: Yahoo Finance · 실시간이 아닐 수 있음',
+      note: '시세 출처: Yahoo Finance · 약 20분 지연 시세',
     });
   });
 

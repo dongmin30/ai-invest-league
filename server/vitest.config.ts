@@ -9,5 +9,7 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     pool: 'forks',
     isolate: true,
+    // Engine rules are tested without a source delay; tests of the delay set 'yahoo' themselves.
+    env: { PRICE_PROVIDER: 'sim' },
   },
 });

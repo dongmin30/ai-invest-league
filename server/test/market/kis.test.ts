@@ -134,6 +134,17 @@ describe('createKisProvider', () => {
       dailyBars: { name: 'yahoo', fetchQuotes: async () => [], fetchDailyBars: async () => [] } as PriceProvider,
     });
 
+  it('skips KR symbols while an auction result may be pending, and still fetches US ones', async () => {
+    const closingAuction = Date.UTC(2026, 9, 19, 6, 25); // 15:25 KST
+    setNow(() => closingAuction);
+    const kis = fakeKis(quoteResponse);
+    const provider = make(kis.fetchImpl);
+    expect((await provider.fetchQuotes([samsung, apple])).map((q) => q.symbol)).toEqual(['AAPL']);
+
+    setNow(() => closingAuction + 6 * 60_000); // 15:31 KST: the closing print is in
+    expect((await provider.fetchQuotes([samsung, apple])).map((q) => q.symbol)).toEqual(['005930', 'AAPL']);
+  });
+
   it('issues one token for a batch and sends the documented headers and params', async () => {
     const kis = fakeKis(quoteResponse);
     const quotes = await make(kis.fetchImpl).fetchQuotes([samsung, apple, jpm]);
@@ -189,7 +200,7 @@ describe('createKisProvider', () => {
     const kis = fakeKis(quoteResponse);
     const provider = make(kis.fetchImpl);
     await provider.fetchQuotes([samsung]);
-    clock += 23 * HOUR;
+    clock += 23 * HOUR + 5 * 60_000; // past the 09:00 KST opening auction, when KR symbols are skipped
     await provider.fetchQuotes([samsung]);
     expect(kis.tokenCalls()).toBe(2);
   });

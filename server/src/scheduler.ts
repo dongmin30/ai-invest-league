@@ -8,7 +8,7 @@ import { computeRankings } from './engine/ranking';
 import { takeSnapshots } from './engine/snapshots';
 import { bus } from './lib/bus';
 import { now } from './lib/time';
-import { isMarketOpen, isMarketTradable, marketDate, POST_CLOSE_FETCH_MS, sessionBounds } from './market/calendar';
+import { closingPrintWaitMs, isMarketOpen, isMarketTradable, marketDate, sessionBounds, YAHOO_KR_CLOSE_WAIT_MS } from './market/calendar';
 import { createCollector, type Collector } from './market/collector';
 import { getProvider } from './market/index';
 
@@ -81,6 +81,8 @@ export function startScheduler(opts: SchedulerOptions = {}): Scheduler {
   const wasOpen = new Map<Market, boolean>(MARKETS.map((m) => [m, isMarketOpen(m, now())]));
   /** Session close per market whose at-close snapshot is still due. */
   const closeSnapshotDue = new Map<Market, number>();
+  /** When daily bars refresh next: after a close, once Yahoo's bars include the closing print. */
+  let dailyBarsDueAt: number | null = null;
 
   const collect = guarded('collect', async () => {
     const quotes: Quote[] = await collector.tick();
@@ -117,20 +119,26 @@ export function startScheduler(opts: SchedulerOptions = {}): Scheduler {
     }
 
     // A snapshot at each close records the session's final equity, taken once the closing prints
-    // of every held or pending-order symbol are in, or POST_CLOSE_FETCH_MS after the close at the
+    // of every held or pending-order symbol are in, or closingPrintWaitMs after the close at the
     // latest. ALL leagues get one at each market's close, counting only that market's symbols.
     // Daily bars then include the new session.
     for (const market of justClosed) {
       closeSnapshotDue.set(market, sessionBounds(market, marketDate(market, now())).close);
+      // Daily bars come from Yahoo whichever provider serves quotes.
+      const barsWait = market === 'KR' && config.priceProvider !== 'sim' ? YAHOO_KR_CLOSE_WAIT_MS : 0;
+      dailyBarsDueAt = Math.max(dailyBarsDueAt ?? 0, now() + barsWait);
     }
     for (const [market, close] of closeSnapshotDue) {
       const leagueIds = activeLeagueIds([market]);
-      if (now() >= close + POST_CLOSE_FETCH_MS || leagueIds.every((id) => hasClosingQuotes(id, close, market))) {
+      if (now() >= close + closingPrintWaitMs(market) || leagueIds.every((id) => hasClosingQuotes(id, close, market))) {
         closeSnapshotDue.delete(market);
         for (const id of leagueIds) takeSnapshots(id);
       }
     }
-    if (justClosed.length > 0) void dailyBars.run();
+    if (dailyBarsDueAt !== null && now() >= dailyBarsDueAt) {
+      dailyBarsDueAt = null;
+      void dailyBars.run();
+    }
   });
 
   const agents = guarded('agents', () => runDueAgents());

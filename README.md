@@ -104,11 +104,13 @@ claude.ai 구독 로그인 토큰(OAuth)은 서버에 넣지 마세요. 반드�
 
 ### 한국투자증권 Open API (`KIS_APP_KEY`, `KIS_APP_SECRET`) — 선택
 
-Yahoo 대신 증권사 공식 시세를 쓰고 싶을 때만 필요합니다.
+Yahoo의 국내 시세는 약 20분 늦습니다. 국내 시세를 실시간으로 받고 싶을 때 설정하세요.
+
+Yahoo 시세를 쓰는 동안 국내 종목은 장 마감 뒤 종가가 들어올 때까지(최대 16:00) 수집을 계속하고, 주문 직후 약 22분과 장 마감 직후 종가가 들어올 때까지는 취소할 수 없습니다. 실제 체결가가 이미 공개된 뒤에 주문을 취소하는 것을 막기 위해서입니다.
 
 1. 한국투자증권 계좌를 개설하고 [KIS Developers](https://apiportal.koreainvestment.com)에서 Open API 서비스를 신청합니다.
 2. 실전투자 앱키(App Key)와 앱시크릿(App Secret)을 발급받습니다 (시세 조회 전용으로만 사용합니다).
-3. `.env`에 `PRICE_PROVIDER=kis`, `KIS_APP_KEY`, `KIS_APP_SECRET`을 설정합니다.
+3. `.env`에 `PRICE_PROVIDER=kis_kr`, `KIS_APP_KEY`, `KIS_APP_SECRET`을 설정합니다.
 
 KIS 연동 코드는 키가 제공되기 전까지 실제 계정으로 검증되지 않았습니다.
 
@@ -123,7 +125,8 @@ KIS 연동 코드는 키가 제공되기 전까지 실제 계정으로 검증되
 | 값 | 키 | 설명 |
 |---|---|---|
 | `yahoo` (기본) | 불필요 | Yahoo Finance 차트 JSON. 지연될 수 있으며 비공식 엔드포인트입니다. |
-| `kis` | KIS 앱키 필요 | 한국투자증권 Open API 시세 |
+| `kis` | KIS 앱키 필요 | 국내·미국 모두 한국투자증권 Open API 시세. 미국 시간외 거래는 꺼집니다. |
+| `kis_kr` | KIS 앱키 필요 | 국내는 한국투자증권 실시간 시세, 미국은 Yahoo. 미국 시간외 거래가 유지됩니다. |
 | `sim` | 불필요 | 오프라인 랜덤워크. `SIM_ALWAYS_OPEN=true`와 함께 데모용 |
 
 포털 사이트 HTML 스크래핑(예: 네이버 금융)은 사용하지 않습니다.

@@ -64,7 +64,7 @@ const EnvSchema = z.object({
   PORT: int(8787, 1),
   JWT_SECRET: optionalString,
   ADMIN_EMAILS: z.preprocess(emptyToUndefined, z.string().optional()),
-  PRICE_PROVIDER: z.preprocess(emptyToUndefined, z.enum(['yahoo', 'kis', 'sim']).default('yahoo')),
+  PRICE_PROVIDER: z.preprocess(emptyToUndefined, z.enum(['yahoo', 'kis', 'kis_kr', 'sim']).default('yahoo')),
   SIM_ALWAYS_OPEN: bool(false),
   COLLECT_INTERVAL_SEC: int(60, 5),
   KIS_APP_KEY: optionalString,
@@ -104,7 +104,7 @@ if (!jwtSecret) {
   }
 }
 
-export type PriceProviderName = 'yahoo' | 'kis' | 'sim';
+export type PriceProviderName = 'yahoo' | 'kis' | 'kis_kr' | 'sim';
 export type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export interface Config {

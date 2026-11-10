@@ -2,7 +2,7 @@ import type { LeagueMarket, Market, Quote } from '../../../shared/api-types';
 import { db, tx } from '../db/db';
 import { bus } from '../lib/bus';
 import { now } from '../lib/time';
-import { closingPrintSession, isMarketTradable, POST_CLOSE_FETCH_MS } from './calendar';
+import { awaitingClosingPrint, isMarketTradable, POST_CLOSE_FETCH_MS } from './calendar';
 import { getFx, setFx, storeFx } from './fx';
 import type { DailyBar, PriceProvider } from './providers/types';
 import { errorMessage } from './providers/http';
@@ -18,7 +18,7 @@ export { POST_CLOSE_FETCH_MS };
 
 export interface Collector {
   /**
-   * Fetches quotes for tradable markets (extended hours included), markets that closed less than POST_CLOSE_FETCH_MS ago,
+   * Fetches quotes for tradable markets (extended hours included), markets whose closing print may still be on its way (closingPrintWaitMs),
    * and any symbol without a cached quote; stores and broadcasts them. USD/KRW is fetched once
    * per tick (separate call) while either market is in that window or until this collector has
    * fetched one (a rate seeded from fx_rates at boot does not count); it is stored, cached and
@@ -64,7 +64,7 @@ function marketsAwaitingClose(at: number): Set<Market> {
 
 export function createCollector(provider: PriceProvider): Collector {
   const openMarkets = (at: number) =>
-    new Set(MARKETS.filter((m) => isMarketTradable(m, at) || closingPrintSession(m, at) !== null));
+    new Set(MARKETS.filter((m) => isMarketTradable(m, at) || awaitingClosingPrint(m, at)));
 
   function symbolsToFetch(open: Set<Market>): SymbolInfo[] {
     // Symbols with no cached quote are fetched even while closed, so prices exist right after boot.

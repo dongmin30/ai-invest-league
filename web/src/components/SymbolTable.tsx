@@ -160,7 +160,7 @@ export function SymbolTable({ rows, selected, onSelect, holdings, fx }: {
                       <PctText value={row.change_pct} />
                     </td>
                     <td className="hidden whitespace-nowrap px-4 py-2 text-right text-xs tabular-nums sm:table-cell">
-                      <span className={row.stale ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'} title={row.stale ? '5분 이상 갱신되지 않은 시세' : undefined}>
+                      <span className={row.stale ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'} title={row.stale ? '평소보다 오래 갱신되지 않은 시세' : undefined}>
                         {formatTime(row.ts)}
                         {row.stale && ' ⚠'}
                       </span>

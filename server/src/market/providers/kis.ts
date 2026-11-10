@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Quote } from '../../../../shared/api-types';
 import { now } from '../../lib/time';
+import { krAuctionPending } from '../calendar';
 import type { SymbolInfo } from '../symbols';
 import { backoffMs, createLimiter, createRateLimiter, errorMessage, sleep } from './http';
 import type { FetchLike, PriceProvider } from './types';
@@ -142,6 +143,25 @@ interface TokenFile extends KisToken {
   key_id: string;
 }
 
+/** KR quotes from `kis`, everything else from `other`, whose extended hours stay available. */
+export function krFromKis(kis: PriceProvider, other: PriceProvider): PriceProvider {
+  return {
+    ...kis,
+    async fetchQuotes(symbols) {
+      const isKr = (s: SymbolInfo) => s.market === 'KR';
+      const settled = await Promise.allSettled([
+        kis.fetchQuotes(symbols.filter(isKr)),
+        other.fetchQuotes(symbols.filter((s) => !isKr(s))),
+      ]);
+      return settled.flatMap((r) => {
+        if (r.status === 'fulfilled') return r.value;
+        console.warn(`[kis] quotes failed: ${errorMessage(r.reason)}`);
+        return [];
+      });
+    },
+  };
+}
+
 export function createKisProvider(opts: KisOptions): PriceProvider {
   const fetchImpl: FetchLike = opts.fetchImpl ?? ((input, init) => fetch(input, init));
   const baseUrl = opts.baseUrl.replace(/\/+$/, '');
@@ -266,11 +286,13 @@ export function createKisProvider(opts: KisOptions): PriceProvider {
     name: 'kis',
 
     async fetchQuotes(symbols) {
-      const settled = await Promise.allSettled(symbols.map((info) => limit(() => fetchQuote(info))));
+      const skipKr = krAuctionPending(now());
+      const wanted = symbols.filter((s) => !(skipKr && s.market === 'KR'));
+      const settled = await Promise.allSettled(wanted.map((info) => limit(() => fetchQuote(info))));
       const quotes: Quote[] = [];
       settled.forEach((r, i) => {
         if (r.status === 'fulfilled') quotes.push(r.value);
-        else console.warn(`[kis] quote ${symbols[i]!.symbol} failed: ${errorMessage(r.reason)}`);
+        else console.warn(`[kis] quote ${wanted[i]!.symbol} failed: ${errorMessage(r.reason)}`);
       });
       return quotes;
     },

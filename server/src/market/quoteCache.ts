@@ -1,8 +1,8 @@
 import type { Market, Quote } from '../../../shared/api-types';
 import { now } from '../lib/time';
-import { isMarketOpen } from './calendar';
+import { isMarketOpen, marketDate, quoteDelayMs, sessionBounds } from './calendar';
 
-/** A quote older than this while its market is open is reported as stale. */
+/** A quote older than this (beyond the source's normal delay) while its market is open is reported as stale. */
 export const STALE_MS = 5 * 60_000;
 
 const cache = new Map<string, Quote>();
@@ -29,5 +29,8 @@ export function clearQuotes(): void {
 }
 
 export function isStale(q: Quote, at: number = now()): boolean {
-  return isMarketOpen(q.market, at) && at - q.ts > STALE_MS;
+  if (!isMarketOpen(q.market, at)) return false;
+  // Before the session's first print arrives the latest quote is simply yesterday's close.
+  const { open } = sessionBounds(q.market, marketDate(q.market, at));
+  return at - Math.max(q.ts, open) > STALE_MS + quoteDelayMs(q.market);
 }

@@ -22,7 +22,7 @@ import {
   leagueSessionBounds,
   leagueTradeDate,
   nextLeagueOpen,
-  POST_CLOSE_FETCH_MS,
+  closingPrintWaitMs,
 } from '../market/calendar';
 import { getQuote } from '../market/quoteCache';
 import { getSymbol } from '../market/symbols';
@@ -614,7 +614,7 @@ export function hasClosingQuotes(leagueId: number, closeAt: number, market?: Mar
 /**
  * recruiting → active at start_at; active → finished once end_at has passed and the closing
  * quotes of every held or pending-order symbol are in (see hasClosingQuotes), or
- * POST_CLOSE_FETCH_MS after end_at at the latest (delayed or halted symbols then keep their
+ * closingPrintWaitMs after end_at at the latest (halted symbols then keep their
  * last price). Returns the changed ids.
  */
 export function updateLeagueStatuses(): { activated: number[]; finished: number[] } {
@@ -625,7 +625,7 @@ export function updateLeagueStatuses(): { activated: number[]; finished: number[
   }
   const ended = sql("SELECT * FROM leagues WHERE status = 'active' AND end_at <= ?").all(at) as LeagueRow[];
   const finished = ended
-    .filter((l) => at >= l.end_at + POST_CLOSE_FETCH_MS || hasClosingQuotes(l.id, l.end_at, closingMarketOf(l)))
+    .filter((l) => at >= l.end_at + closingPrintWaitMs(closingMarketOf(l)) || hasClosingQuotes(l.id, l.end_at, closingMarketOf(l)))
     .map((l) => l.id);
   for (const id of finished) finishLeague(id);
   return { activated, finished };

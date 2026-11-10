@@ -2,7 +2,7 @@ import type { Order, PlaceOrderRequest } from '../../../shared/api-types';
 import { tx } from '../db/db';
 import { bus } from '../lib/bus';
 import { now } from '../lib/time';
-import { isMarketTradable, leagueTradeDate, nextTradable } from '../market/calendar';
+import { cancelLockedUntil, isMarketTradable, leagueTradeDate, nextTradable } from '../market/calendar';
 import { appliedFx, getFx } from '../market/fx';
 import { getQuote } from '../market/quoteCache';
 import { getSymbol } from '../market/symbols';
@@ -118,6 +118,12 @@ export function cancelOrder(orderId: number, participantId: number): Order {
       throw new EngineError('not_found', '주문을 찾을 수 없습니다.');
     }
     if (row.status !== 'pending') throw new EngineError('not_pending', '대기 중인 주문만 취소할 수 있습니다.');
+    const market = getSymbol(row.symbol)?.market;
+    const lockedUntil = market ? cancelLockedUntil(market, row.created_at) : null;
+    if (lockedUntil !== null) {
+      const mins = Math.ceil((lockedUntil - now()) / 60_000);
+      throw new EngineError('cancel_locked', `시세가 늦게 들어와 체결가가 이미 정해졌을 수 있는 주문입니다. 약 ${mins}분 뒤부터 취소할 수 있습니다.`);
+    }
     sql("UPDATE orders SET status = 'canceled' WHERE id = ?").run(orderId);
     const participant = getParticipantRow(participantId)!;
     return { order: toOrder(getOrderRow(orderId)!), leagueId: participant.league_id };
