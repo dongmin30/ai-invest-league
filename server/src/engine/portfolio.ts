@@ -1,5 +1,6 @@
 import type { Holding, Portfolio } from '../../../shared/api-types';
-import { leagueTradeDate } from '../market/calendar';
+import { config } from '../config';
+import { leagueTradeDate, marketDate, sessionBounds } from '../market/calendar';
 import { fxAt, getFx } from '../market/fx';
 import { getQuote } from '../market/quoteCache';
 import { getSymbol } from '../market/symbols';
@@ -47,13 +48,64 @@ function markFx(league: LeagueRow, h: HoldingRow, mid: number | undefined = getF
   return mid ?? h.avg_fx;
 }
 
-/** Cash plus holdings marked to the last quote (US holdings of ALL leagues at the USD/KRW mid). */
-export function equityOf(participantId: number): number {
+/** A league that finishes late is valued as of `endAt`, from prices dated up to `cutoff` (see settledPrice). */
+export interface Settlement {
+  endAt: number;
+  cutoff: number;
+  /** USD/KRW mid to value US holdings of ALL leagues at; the live mid when omitted. */
+  mid?: number;
+}
+
+/** Close of the last session of `symbol` that ended at or before `endAt`, from daily_bars. */
+function closingBar(symbol: string, endAt: number): { ts: number; price: number } | undefined {
+  const market = getSymbol(symbol)?.market;
+  if (!market) return undefined;
+  const bars = sql('SELECT date, close FROM daily_bars WHERE symbol = ? AND date <= ? ORDER BY date DESC LIMIT 3').all(
+    symbol,
+    marketDate(market, endAt),
+  ) as { date: string; close: number }[];
+  for (const bar of bars) {
+    const { close } = sessionBounds(market, bar.date);
+    if (close <= endAt) return { ts: close, price: bar.close };
+  }
+  return undefined;
+}
+
+/**
+ * Price of `symbol` as of a league end the server missed (it was off at end_at, so the quote
+ * cache already holds a later session): the last stored quote up to `cutoff`, or the daily close
+ * of the last session that ended by `endAt` when that is newer. A close taken from daily_bars is
+ * written to `quotes` at its session close, so getPortfolio() later reads the very same price.
+ * undefined when neither exists.
+ */
+export function settledPrice(symbol: string, { endAt, cutoff }: Pick<Settlement, 'endAt' | 'cutoff'>): number | undefined {
+  const stored = sql('SELECT ts, price FROM quotes WHERE symbol = ? AND ts <= ? ORDER BY ts DESC LIMIT 1').get(symbol, cutoff) as
+    | { ts: number; price: number }
+    | undefined;
+  const bar = closingBar(symbol, endAt);
+  if (bar && (!stored || stored.ts < bar.ts)) {
+    sql('INSERT OR REPLACE INTO quotes (symbol, ts, price, volume, source) VALUES (?, ?, ?, 0, ?)').run(
+      symbol,
+      Math.floor(bar.ts / 60_000) * 60_000, // quotes keeps one row per minute
+      bar.price,
+      config.priceProvider === 'sim' ? 'sim' : 'yahoo',
+    );
+    return bar.price;
+  }
+  return stored?.price;
+}
+
+/**
+ * Cash plus holdings marked to the last quote (US holdings of ALL leagues at the USD/KRW mid).
+ * With `settle`, holdings are marked to settledPrice() instead (the last quote only for symbols
+ * with no price on record) and US holdings at `settle.mid`.
+ */
+export function equityOf(participantId: number, settle?: Settlement): number {
   const { participant, league } = load(participantId);
-  const value = getHoldings(participantId).reduce(
-    (sum, h) => sum + h.quantity * markPrice(h.symbol, h.avg_price) * markFx(league, h),
-    0,
-  );
+  const value = getHoldings(participantId).reduce((sum, h) => {
+    const price = (settle && settledPrice(h.symbol, settle)) ?? markPrice(h.symbol, h.avg_price);
+    return sum + h.quantity * price * markFx(league, h, settle?.mid ?? getFx()?.rate);
+  }, 0);
   return roundMoney(league.currency, participant.cash + value);
 }
 

@@ -217,7 +217,7 @@ export default function LeaguePage() {
               {activity.map((a, i) => (
                 <li key={`${a.at}-${i}`} className="text-sm">
                   <div className="flex items-center gap-2">
-                    <Link to={`/agents/${a.agent_id}`} className="font-medium hover:underline">
+                    <Link to={`/agents/${a.agent_id}?league=${league.id}`} className="font-medium hover:underline">
                       {a.agent_name}
                     </Link>
                     <DecisionStatusChip status={a.status} />
@@ -232,7 +232,7 @@ export default function LeaguePage() {
       </div>
 
       <Card title={`랭킹 (${rankings.length}명)`} actions={<span className="text-xs text-slate-400">체결 1건 이상부터 순위 집계 · 동률은 MDD, 거래 수 순</span>}>
-        <RankingsTable rows={rankings} currency={league.currency} myParticipantId={myId} />
+        <RankingsTable rows={rankings} currency={league.currency} myParticipantId={myId} leagueId={league.id} />
       </Card>
     </div>
   );

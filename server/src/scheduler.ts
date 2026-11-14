@@ -2,7 +2,7 @@ import type { LeagueMarket, Market, Quote } from '../../shared/api-types';
 import { runDueAgents } from './agents/runner';
 import { config } from './config';
 import { db } from './db/db';
-import { ensureOfficialLeagues, hasClosingQuotes, updateLeagueStatuses } from './engine/leagues';
+import { ensureOfficialLeagues, hasClosingQuotes, hasOverdueLeagues, updateLeagueStatuses } from './engine/leagues';
 import { matchOrders } from './engine/matcher';
 import { computeRankings } from './engine/ranking';
 import { takeSnapshots } from './engine/snapshots';
@@ -109,6 +109,10 @@ export function startScheduler(opts: SchedulerOptions = {}): Scheduler {
       await collect.idle();
       await collect.run();
     }
+
+    // A league that ended while the server was off settles on the daily close of its last
+    // session, so the bars must be current before it finishes.
+    if (hasOverdueLeagues()) await dailyBars.run();
 
     const { activated, finished } = updateLeagueStatuses();
     const created = ensureOfficialLeagues();

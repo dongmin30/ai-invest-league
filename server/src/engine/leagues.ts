@@ -1,3 +1,4 @@
+import { config } from '../config';
 import { randomInt } from 'node:crypto';
 import type {
   DashboardCard,
@@ -23,6 +24,7 @@ import {
   leagueTradeDate,
   nextLeagueOpen,
   closingPrintWaitMs,
+  YAHOO_KR_CLOSE_WAIT_MS,
 } from '../market/calendar';
 import { getQuote } from '../market/quoteCache';
 import { getSymbol } from '../market/symbols';
@@ -559,21 +561,60 @@ export function ensureOfficialLeagues(): LeagueSummary[] {
 
 // ---- lifecycle ----
 
+/** Slack after the closing-print wait before a finish counts as late (the status job runs every minute). */
+export const LATE_FINISH_GRACE_MS = 5 * 60_000;
+
+/** Latest time a price may carry and still be the league's closing price: end_at plus the closing-print wait. */
+function settlementCutoff(league: Pick<LeagueRow, 'market' | 'end_at'>): number {
+  return league.end_at + closingPrintWaitMs(closingMarketOf(league));
+}
+
+/**
+ * Whether any active league is so far past its end_at that it will settle from stored prices
+ * (the server was off when it ended). The scheduler refreshes daily bars first when so.
+ */
+/**
+ * When a finish starts to count as late. Daily bars come from Yahoo whichever provider serves
+ * quotes, and Yahoo's KR bar lacks the closing print until YAHOO_KR_CLOSE_WAIT_MS after the
+ * close, so a KR close is never settled from bars before then (a live provider's quote is used).
+ */
+function lateAfter(league: Pick<LeagueRow, 'market' | 'end_at'>): number {
+  const barsReady =
+    closingMarketOf(league) === 'KR' && config.priceProvider !== 'sim' ? league.end_at + YAHOO_KR_CLOSE_WAIT_MS : 0;
+  return Math.max(settlementCutoff(league), barsReady) + LATE_FINISH_GRACE_MS;
+}
+
+export function hasOverdueLeagues(at: number = now()): boolean {
+  const ended = sql("SELECT market, end_at FROM leagues WHERE status = 'active' AND end_at <= ?").all(at) as Pick<
+    LeagueRow,
+    'market' | 'end_at'
+  >[];
+  return ended.some((l) => at > lateAfter(l));
+}
+
 /**
  * Finishes an active league: cancels pending orders, takes the final snapshot, freezes
  * standings into final_rank / final_return. No-op for leagues that are not active.
+ *
+ * Standings are valued at the prices of the league's end. Normally that is the live quote
+ * (the league finishes within the closing-print wait). A league finishing later than that
+ * (the server was off at end_at) is valued from the prices on record up to its end instead,
+ * so sessions it was not part of cannot move its result.
  */
 export function finishLeague(leagueId: number): void {
   const result = tx(() => {
     const league = getLeagueRow(leagueId);
     if (!league || league.status !== 'active') return null;
+    const cutoff = settlementCutoff(league);
+    const late = now() > lateAfter(league);
+    if (late) console.warn(`[leagues] league ${leagueId} finished late; valued as of its end (${new Date(league.end_at).toISOString()})`);
     const pending = sql(
       `SELECT o.* FROM orders o JOIN participants p ON p.id = o.participant_id
        WHERE p.league_id = ? AND o.status = 'pending'`,
     ).all(leagueId) as OrderRow[];
     const cancel = sql("UPDATE orders SET status = 'canceled', reject_reason = ? WHERE id = ?");
     for (const o of pending) cancel.run('리그 종료로 취소되었습니다.', o.id);
-    takeSnapshots(leagueId);
+    takeSnapshots(leagueId, late ? { endAt: league.end_at, cutoff } : undefined);
     sql("UPDATE leagues SET status = 'finished' WHERE id = ?").run(leagueId);
     const rankings = computeRankings(leagueId);
     const store = sql('UPDATE participants SET final_rank = ?, final_return = ? WHERE id = ?');

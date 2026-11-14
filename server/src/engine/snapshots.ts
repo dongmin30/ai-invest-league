@@ -1,8 +1,8 @@
 import type { EquityPoint, EquitySeries } from '../../../shared/api-types';
 import { tx } from '../db/db';
 import { now } from '../lib/time';
-import { getFx } from '../market/fx';
-import { equityOf } from './portfolio';
+import { fxAt, getFx } from '../market/fx';
+import { equityOf, type Settlement } from './portfolio';
 import { computeRankings } from './ranking';
 import { getLeagueRow, getParticipantsOf, sql, type LeagueRow } from './store';
 
@@ -13,22 +13,28 @@ const TOP_HUMANS = 10;
  * `leagueId`, if it is active). ALL leagues also record the USD/KRW mid the equity used
  * (`fx_rate`), so a finished league's portfolio is priced at exactly that rate. Returns the
  * number of snapshots written.
+ *
+ * With `settle` (a league finishing well after its end_at, see finishLeague) the snapshot is
+ * dated `settle.cutoff` and values holdings as of the league end: prices from settledPrice(),
+ * USD/KRW from the last rate stored by then. Snapshots after the cutoff are dropped.
  */
-export function takeSnapshots(leagueId?: number): number {
+export function takeSnapshots(leagueId?: number, settle?: Pick<Settlement, 'endAt' | 'cutoff'>): number {
   const leagues = (
     leagueId === undefined
       ? sql("SELECT * FROM leagues WHERE status = 'active'").all()
       : sql("SELECT * FROM leagues WHERE id = ? AND status = 'active'").all(leagueId)
   ) as LeagueRow[];
-  const ts = now();
-  // equityOf marks US holdings at this same in-memory mid (nothing can change it inside this call).
-  const mid = getFx()?.rate ?? null;
+  const ts = settle?.cutoff ?? now();
+  // equityOf marks US holdings at this same mid (nothing can change the in-memory one inside this call).
+  const mid = (settle && fxAt(settle.cutoff)) ?? getFx()?.rate ?? null;
+  const settlement: Settlement | undefined = settle && { ...settle, mid: mid ?? undefined };
   return tx(() => {
     let count = 0;
     for (const league of leagues) {
       for (const p of getParticipantsOf(league.id)) {
         if (p.left_at !== null) continue;
-        const equity = equityOf(p.id);
+        const equity = equityOf(p.id, settlement);
+        if (settle) sql('DELETE FROM snapshots WHERE participant_id = ? AND ts > ?').run(p.id, ts);
         sql(
           'INSERT OR REPLACE INTO snapshots (participant_id, ts, equity, return_rate, fx_rate) VALUES (?, ?, ?, ?, ?)',
         ).run(p.id, ts, equity, equity / league.start_cash - 1, league.market === 'ALL' ? mid : null);

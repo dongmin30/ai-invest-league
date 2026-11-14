@@ -249,6 +249,19 @@ export interface DecisionOrder {
   reason: string;
 }
 
+/** What became of an order a decision placed. */
+export interface DecisionFill {
+  order_id: number;
+  symbol: string;
+  name: string;
+  side: OrderSide;
+  quantity: number;
+  status: OrderStatus;
+  fill_price: number | null; // native currency of the symbol
+  currency: Currency;
+  filled_at: number | null;
+}
+
 export interface DecisionLog {
   id: number;
   agent_id: number;
@@ -258,12 +271,23 @@ export interface DecisionLog {
   market_view: string;
   orders: DecisionOrder[]; // as proposed by the model (after schema validation)
   accepted_order_ids: number[];
+  accepted_orders: DecisionFill[]; // current state of the accepted orders, in accepted_order_ids order
   rejected: { symbol: string; reason: string }[];
   status: 'ok' | 'hold' | 'invalid' | 'error' | 'timeout';
   error: string | null;
   input_tokens: number | null;
   output_tokens: number | null;
   latency_ms: number;
+}
+
+/** `traded`: placed at least one order; `hold`: decided to hold; `failed`: every order refused, or the decision itself failed. */
+export type DecisionResult = 'traded' | 'hold' | 'failed';
+
+/** GET /agents/:id/decisions, newest first. Pass `next_before` as `before` for the next page. */
+export interface DecisionPage {
+  decisions: DecisionLog[];
+  total: number; // decisions matching the filters, over all pages
+  next_before: number | null;
 }
 
 export interface AgentDetail {

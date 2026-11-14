@@ -56,7 +56,9 @@ function RankCell({ row }: { row: RankingRow }) {
   );
 }
 
-export function RankingsTable({ rows, currency, myParticipantId }: {
+export function RankingsTable({ rows, currency, myParticipantId, leagueId }: {
+  /** When given, AI names link to the agent's decisions in this league. */
+  leagueId?: number;
   rows: RankingRow[];
   currency: Currency;
   myParticipantId: number | null;
@@ -92,7 +94,7 @@ export function RankingsTable({ rows, currency, myParticipantId }: {
                 <td className="px-2 py-2.5">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     {row.kind === 'ai' && row.agent_id !== null ? (
-                      <Link to={`/agents/${row.agent_id}`} className="font-medium hover:underline">
+                      <Link to={leagueId === undefined ? `/agents/${row.agent_id}` : `/agents/${row.agent_id}?league=${leagueId}`} className="font-medium hover:underline">
                         {row.display_name}
                       </Link>
                     ) : (

@@ -4,6 +4,8 @@ import type {
   CreateLeagueRequest,
   DashboardCard,
   DecisionLog,
+  DecisionPage,
+  DecisionResult,
   EquitySeries,
   FxQuote,
   LeagueDetail,
@@ -164,6 +166,8 @@ export const api = {
 
   agents: () => request<AgentInfo[]>('/agents'),
   agent: (agentId: number) => request<AgentDetail>(`/agents/${agentId}`),
+  agentDecisions: (agentId: number, query: { league_id?: number; result?: DecisionResult; before?: number; limit?: number } = {}) =>
+    request<DecisionPage>(`/agents/${agentId}/decisions`, { query }),
 
   adminRunAgent: (agentId: number, leagueId: number) =>
     request<DecisionLog>(`/admin/agents/${agentId}/run`, { method: 'POST', body: { league_id: leagueId } }),

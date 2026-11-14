@@ -1,6 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { findAgentParticipant, getAgentDetail, isDecisionRunning, listAgents, runDecision } from '../../agents/runner';
+import {
+  DECISION_PAGE_MAX,
+  findAgentParticipant,
+  getAgentDetail,
+  isDecisionRunning,
+  listAgents,
+  listDecisions,
+  runDecision,
+} from '../../agents/runner';
 import { listOfficialSeries, setOfficialSeriesEnabled } from '../../engine/leagues';
 import { matchOrders } from '../../engine/matcher';
 import { getLeagueRow } from '../../engine/store';
@@ -13,6 +21,12 @@ const RunBody = z.object({ league_id: z.number('league_id가 필요합니다.').
 const SeriesParams = z.object({
   market: z.enum(['KR', 'US', 'ALL'], '시장은 KR, US, ALL 중 하나여야 합니다.'),
   type: z.enum(['3d', '1w', '1m'], '리그 종류는 3d, 1w, 1m 중 하나여야 합니다.'),
+});
+const DecisionsQuery = z.object({
+  league_id: z.coerce.number().int().positive().optional(),
+  result: z.enum(['traded', 'hold', 'failed'], 'result는 traded, hold, failed 중 하나여야 합니다.').optional(),
+  before: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(DECISION_PAGE_MAX).optional(),
 });
 const SeriesBody = z.object({ enabled: z.boolean('enabled(true/false)가 필요합니다.') });
 
@@ -27,6 +41,19 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     const detail = getAgentDetail(IdParams.parse(req.params).id, user.role === 'admin' ? undefined : user.id);
     if (!detail) throw notFound('에이전트를 찾을 수 없습니다.');
     return detail;
+  });
+
+  // Decision history with filters; leagues the viewer cannot see are left out, as in GET /agents/:id.
+  app.get('/agents/:id/decisions', async (req) => {
+    const user = requireUser(req);
+    const q = DecisionsQuery.parse(req.query);
+    const page = listDecisions(
+      IdParams.parse(req.params).id,
+      { leagueId: q.league_id, result: q.result, before: q.before, limit: q.limit },
+      user.role === 'admin' ? undefined : user.id,
+    );
+    if (!page) throw notFound('에이전트를 찾을 수 없습니다.');
+    return page;
   });
 }
 

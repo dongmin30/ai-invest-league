@@ -4,6 +4,7 @@ import type {
   AgentDetail,
   DashboardCard,
   DecisionLog,
+  DecisionPage,
   EquitySeries,
   LeagueDetail,
   LeagueSummary,
@@ -120,6 +121,7 @@ describe('protected endpoints', () => {
       ['GET', '/api/market/quote/005930/intraday'],
       ['GET', '/api/agents'],
       ['GET', '/api/agents/1'],
+      ['GET', '/api/agents/1/decisions'],
       ['POST', '/api/admin/agents/1/run'],
       ['POST', '/api/admin/collect'],
       ['GET', '/api/admin/official-series'],
@@ -613,6 +615,41 @@ describe('market and agents', () => {
     expect(detail.statusCode).toBe(200);
     expect(detail.json()).toMatchObject({ agent: { id: agents.baseline, model: 'baseline' }, recent_decisions: [] });
     expectApiError(await get(bob, '/api/agents/9999'), 404, 'not_found');
+  });
+
+  it('lists an agent\'s decisions filtered by league and outcome', async () => {
+    const first = await createLeague(alice, { agent_ids: [agents.baseline] });
+    const second = await createLeague(alice, { name: '두번째 리그', agent_ids: [agents.baseline] });
+    for (const league of [first, second]) {
+      const run = await app.inject({
+        method: 'POST',
+        url: `/api/admin/agents/${agents.baseline}/run`,
+        cookies: admin.cookies,
+        payload: { league_id: league.id },
+      });
+      expect(run.statusCode).toBe(200);
+    }
+    const url = `/api/agents/${agents.baseline}/decisions`;
+
+    const all = (await get(bob, url)).json<DecisionPage>();
+    expect(all.total).toBe(2);
+    expect(all.decisions.map((d) => d.league_id)).toEqual([second.id, first.id]);
+    expect(all.next_before).toBeNull();
+
+    const one = (await get(bob, `${url}?league_id=${first.id}&result=traded`)).json<DecisionPage>();
+    expect(one.total).toBe(1);
+    expect(one.decisions[0]).toMatchObject({ league_id: first.id, status: 'ok' });
+    expect(one.decisions[0]!.accepted_orders.length).toBe(one.decisions[0]!.accepted_order_ids.length);
+    expect(one.decisions[0]!.accepted_orders[0]).toMatchObject({ side: 'BUY', status: 'pending', currency: 'KRW' });
+
+    expect((await get(bob, `${url}?result=hold`)).json<DecisionPage>()).toMatchObject({ decisions: [], total: 0 });
+    const paged = (await get(bob, `${url}?limit=1`)).json<DecisionPage>();
+    expect(paged.decisions).toHaveLength(1);
+    expect((await get(bob, `${url}?limit=1&before=${paged.next_before}`)).json<DecisionPage>().decisions[0]!.league_id).toBe(first.id);
+
+    expectApiError(await get(bob, `${url}?result=nope`), 400, 'validation');
+    expectApiError(await get(bob, `${url}?limit=1000`), 400, 'validation');
+    expectApiError(await get(bob, '/api/agents/9999/decisions'), 404, 'not_found');
   });
 });
 

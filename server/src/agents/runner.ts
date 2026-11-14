@@ -2,8 +2,11 @@ import { ZodError } from 'zod';
 import type {
   AgentDetail,
   AgentInfo,
+  DecisionFill,
   DecisionLog,
   DecisionOrder,
+  DecisionPage,
+  DecisionResult,
   LeagueSummary,
   Market,
   Order,
@@ -17,7 +20,7 @@ import { getLeagueSummary } from '../engine/leagues';
 import { listOrders, placeOrder } from '../engine/orders';
 import { getPortfolio } from '../engine/portfolio';
 import { computeRankings } from '../engine/ranking';
-import { agentMarkets, getLeagueRow, getParticipantRow, sql, type AgentRow, type LeagueRow } from '../engine/store';
+import { agentMarkets, getLeagueRow, getParticipantRow, sql, type AgentRow, type LeagueRow, type OrderRow } from '../engine/store';
 import { bus } from '../lib/bus';
 import { now } from '../lib/time';
 import { isLeagueTradable, isMarketTradable } from '../market/calendar';
@@ -225,7 +228,33 @@ function parseJson<T>(text: string, fallback: T): T {
   }
 }
 
+/** Current state of the orders a decision placed, in the order they were accepted. */
+function fillsOf(orderIds: number[]): DecisionFill[] {
+  if (orderIds.length === 0) return [];
+  const rows = sql(`SELECT * FROM orders WHERE id IN (${orderIds.map(() => '?').join(',')})`).all(...orderIds) as OrderRow[];
+  const byId = new Map(rows.map((o) => [o.id, o]));
+  return orderIds.flatMap((id) => {
+    const o = byId.get(id);
+    if (!o) return [];
+    const info = getSymbol(o.symbol);
+    return [
+      {
+        order_id: o.id,
+        symbol: o.symbol,
+        name: info?.name ?? o.symbol,
+        side: o.side,
+        quantity: o.quantity,
+        status: o.status,
+        fill_price: o.fill_price,
+        currency: info?.market === 'US' ? 'USD' : 'KRW',
+        filled_at: o.filled_at,
+      },
+    ];
+  });
+}
+
 function toDecisionLog(row: DecisionLogRow): DecisionLog {
+  const acceptedIds = parseJson<number[]>(row.accepted_order_ids_json, []);
   return {
     id: row.id,
     agent_id: row.agent_id,
@@ -234,7 +263,8 @@ function toDecisionLog(row: DecisionLogRow): DecisionLog {
     ts: row.ts,
     market_view: row.market_view,
     orders: parseJson<DecisionOrder[]>(row.orders_json, []),
-    accepted_order_ids: parseJson<number[]>(row.accepted_order_ids_json, []),
+    accepted_order_ids: acceptedIds,
+    accepted_orders: fillsOf(acceptedIds),
     rejected: parseJson<{ symbol: string; reason: string }[]>(row.rejected_json, []),
     status: row.status,
     error: row.error,
@@ -585,4 +615,51 @@ export function getAgentDetail(agentId: number, visibleTo?: number): AgentDetail
   ).map(toDecisionLog);
 
   return { agent: toAgentInfo(agent), participations, recent_decisions: recent };
+}
+
+export const DECISION_PAGE_DEFAULT = 30;
+export const DECISION_PAGE_MAX = 100;
+
+const RESULT_SQL: Record<DecisionResult, string> = {
+  traded: "d.accepted_order_ids_json <> '[]'",
+  hold: "d.status = 'hold'",
+  failed: "d.status <> 'hold' AND d.accepted_order_ids_json = '[]'",
+};
+
+export interface DecisionQuery {
+  /** Only this league's decisions. */
+  leagueId?: number;
+  result?: DecisionResult;
+  /** Only decisions older than this decision id (the previous page's next_before). */
+  before?: number;
+  limit?: number;
+}
+
+/**
+ * An agent's decisions, newest first, optionally of one league and one outcome. null when the
+ * agent does not exist. With `visibleTo`, only leagues that user can see (as getAgentDetail).
+ */
+export function listDecisions(agentId: number, query: DecisionQuery = {}, visibleTo?: number): DecisionPage | null {
+  if (!sql('SELECT 1 FROM agents WHERE id = ?').get(agentId)) return null;
+  const limit = Math.min(Math.max(1, query.limit ?? DECISION_PAGE_DEFAULT), DECISION_PAGE_MAX);
+  const where = [
+    'd.agent_id = @agentId',
+    VISIBLE_TO,
+    ...(query.leagueId !== undefined ? ['d.league_id = @leagueId'] : []),
+    ...(query.result ? [RESULT_SQL[query.result]] : []),
+  ].join(' AND ');
+  const params = { agentId, viewer: visibleTo ?? null, leagueId: query.leagueId ?? null, before: query.before ?? null, limit: limit + 1 };
+  const from = 'FROM decision_logs d JOIN leagues l ON l.id = d.league_id';
+
+  const total = sql(`SELECT COUNT(*) ${from} WHERE ${where}`).pluck().get(params) as number;
+  // Ids grow with time (one insert per decision), so the id is both the order and the cursor.
+  const rows = sql(
+    `SELECT d.* ${from} WHERE ${where} AND (@before IS NULL OR d.id < @before) ORDER BY d.id DESC LIMIT @limit`,
+  ).all(params) as DecisionLogRow[];
+  const page = rows.slice(0, limit);
+  return {
+    decisions: page.map(toDecisionLog),
+    total,
+    next_before: rows.length > limit ? page.at(-1)!.id : null,
+  };
 }

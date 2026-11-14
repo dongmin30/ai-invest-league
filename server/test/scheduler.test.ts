@@ -274,6 +274,36 @@ describe('startScheduler', () => {
     expect(count(us.participantId)).toBe(0);
   });
 
+  it('refreshes daily bars before finishing a league that ended while the server was off', async () => {
+    const { leagueId } = activeLeague('KR', { duration_days: 1 });
+    setClock(KR_CLOSE + 2 * 24 * 60 * MIN);
+    const steps: string[] = [];
+    const collector: Collector = {
+      tick: async () => [],
+      loadDailyBars: async () => {
+        steps.push(`bars:${getLeagueRow(leagueId)!.status}`);
+      },
+    };
+
+    scheduler = startScheduler({ collector });
+    await scheduler.ready;
+
+    expect(steps).toEqual(['bars:active']);
+    expect(getLeagueRow(leagueId)!.status).toBe('finished');
+  });
+
+  it('does not refresh daily bars for a league that finishes on time', async () => {
+    const { leagueId } = activeLeague('KR', { duration_days: 1 });
+    setClock(KR_CLOSE + POST_CLOSE_FETCH_MS + MIN);
+    const collector = fakeCollector(async () => []);
+
+    scheduler = startScheduler({ collector });
+    await scheduler.ready;
+
+    expect(getLeagueRow(leagueId)!.status).toBe('finished');
+    expect(collector.loadDailyBars).not.toHaveBeenCalled();
+  });
+
   it('stop() clears every timer', async () => {
     const collector = fakeCollector(async () => []);
     scheduler = startScheduler({ collector });
