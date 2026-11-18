@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS orders (
   side TEXT NOT NULL CHECK (side IN ('BUY','SELL')),
   type TEXT NOT NULL CHECK (type IN ('MARKET','LIMIT')),
   quantity INTEGER NOT NULL CHECK (quantity > 0),
+  requested_quantity INTEGER,       -- set when a BUY filled for fewer shares than ordered (quantity = filled)
   limit_price REAL,
   ref_price REAL NOT NULL,          -- quote price at placement (for cash reservation)
   ref_fx REAL,                      -- FX at placement for US orders in ALL leagues (BUY: spread-applied, reserves cash; SELL: mid)

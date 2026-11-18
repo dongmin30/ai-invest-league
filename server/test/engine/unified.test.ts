@@ -196,7 +196,7 @@ describe('matchOrders in an ALL league', () => {
     expect(filled).toMatchObject({ id: order.id, status: 'filled', fx_rate: 1311.31 });
   });
 
-  it('rejects a BUY whose cost at the fill-time rate exceeds the free cash', () => {
+  it('cuts a BUY whose cost at the fill-time rate exceeds the free cash down to what the cash covers', () => {
     setClock(US_OPEN + MIN);
     const { leagueId, participantId } = activeLeague('ALL');
     setLeague(leagueId, 'max_position_pct', 1);
@@ -205,9 +205,10 @@ describe('matchOrders in an ALL league', () => {
     const order = buy(participantId, APPLE, 38); // 9,889,880 + 9,890 fee at 1301.3
     setFxRate(1320, clockNow() + MIN); // 38 × 200 × 1321.32 = 10,042,032 > 10,000,000
     setClock(clockNow() + MIN);
-    const [rejected] = matchOrders(feed(quote(APPLE, 200)));
-    expect(rejected).toMatchObject({ id: order.id, status: 'rejected', reject_reason: '체결 시점에 주문 가능 금액이 부족했습니다.' });
-    expect(cashOf(participantId)).toBe(START);
+    const [cut] = matchOrders(feed(quote(APPLE, 200)));
+    // 37 × 200 × 1321.32 = 9,777,768 + 9,778 fee.
+    expect(cut).toMatchObject({ id: order.id, status: 'filled', quantity: 37, requested_quantity: 38, fx_rate: 1321.32 });
+    expect(cashOf(participantId)).toBe(START - 9_777_768 - 9_778);
   });
 });
 

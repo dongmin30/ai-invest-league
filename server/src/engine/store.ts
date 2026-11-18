@@ -82,6 +82,8 @@ export interface OrderRow {
   side: OrderSide;
   type: OrderType;
   quantity: number;
+  /** The ordered quantity when a BUY filled for fewer shares (then `quantity` is what filled). */
+  requested_quantity: number | null;
   limit_price: number | null;
   ref_price: number;
   /** FX at placement for US orders in ALL leagues (BUY: spread-applied, what the reservation uses; SELL: mid). */
@@ -167,6 +169,7 @@ export function toOrder(row: OrderRow): Order {
     side: row.side,
     type: row.type,
     quantity: row.quantity,
+    requested_quantity: row.requested_quantity ?? null,
     limit_price: row.limit_price,
     status: row.status,
     reject_reason: row.reject_reason,

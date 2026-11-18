@@ -244,6 +244,7 @@ function fillsOf(orderIds: number[]): DecisionFill[] {
         name: info?.name ?? o.symbol,
         side: o.side,
         quantity: o.quantity,
+        requested_quantity: o.requested_quantity ?? null,
         status: o.status,
         fill_price: o.fill_price,
         currency: info?.market === 'US' ? 'USD' : 'KRW',

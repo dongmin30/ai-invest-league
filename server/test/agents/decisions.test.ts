@@ -115,6 +115,7 @@ describe('listDecisions', () => {
         name: '삼성전자',
         side: 'BUY',
         quantity: 1,
+        requested_quantity: null,
         status: 'pending',
         fill_price: null,
         currency: 'KRW',

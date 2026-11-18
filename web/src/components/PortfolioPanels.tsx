@@ -184,6 +184,11 @@ export function OrderHistory({ orders, currency, names, currencies }: {
                 체결가 {formatMoney(native, o.fill_price)}
                 {o.fx_rate !== null && ` · 환율 ${formatFxRate(o.fx_rate)}`} · 수수료 {formatMoney(currency, o.fee)}
                 {o.tax ? ` · 세금 ${formatMoney(currency, o.tax)}` : ''}
+                {o.requested_quantity != null && (
+                  <span className="block text-amber-600 dark:text-amber-400">
+                    주문 {formatInt(o.requested_quantity)}주 중 {formatInt(o.quantity)}주만 체결 — 주문 때보다 가격(또는 환율)이 올라 잔액에 맞춰 수량을 줄였습니다.
+                  </span>
+                )}
               </>
             ) : o.status === 'rejected' && o.reject_reason ? (
               <span className="text-rose-600 dark:text-rose-400">{o.reject_reason}</span>

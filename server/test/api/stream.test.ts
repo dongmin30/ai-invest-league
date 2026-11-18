@@ -47,6 +47,7 @@ function fakeOrder(participantId: number): Order {
     side: 'BUY',
     type: 'MARKET',
     quantity: 1,
+    requested_quantity: null,
     limit_price: null,
     status: 'pending',
     reject_reason: null,

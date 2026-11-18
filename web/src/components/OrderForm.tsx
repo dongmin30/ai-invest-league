@@ -252,6 +252,11 @@ export function OrderForm({ league, portfolio, symbol, pendingOrders, statuses, 
             최대
           </button>
         </div>
+        {side === 'BUY' && type === 'MARKET' && (
+          <span className="block text-xs text-slate-500 dark:text-slate-400">
+            시장가는 다음 시세에 체결됩니다. 그 사이 가격이나 환율이 올라 잔액이 모자라면 살 수 있는 만큼만 체결됩니다.
+          </span>
+        )}
       </label>
 
       <dl className="space-y-1 rounded-lg bg-slate-50 dark:bg-slate-700/40 p-3 text-sm">

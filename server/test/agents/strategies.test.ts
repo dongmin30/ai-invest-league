@@ -26,6 +26,7 @@ function pendingBuy(symbol: string, quantity: number): Order {
     side: 'BUY',
     type: 'MARKET',
     quantity,
+    requested_quantity: null,
     limit_price: null,
     status: 'pending',
     reject_reason: null,

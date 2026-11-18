@@ -55,7 +55,7 @@ function outcomes(log: DecisionLog): OrderOutcome[] {
   // Placed orders first (symbol, side and quantity identify them), so a rejection of BUY X
   // is never pinned on a SELL X of the same decision.
   const placed = log.orders.map((order) => {
-    const idx = fills.findIndex((f) => key(f.symbol) === key(order.symbol) && f.side === order.side && f.quantity === order.quantity);
+    const idx = fills.findIndex((f) => key(f.symbol) === key(order.symbol) && f.side === order.side && (f.requested_quantity ?? f.quantity) === order.quantity);
     return idx >= 0 ? fills.splice(idx, 1)[0] : null;
   });
   const rejected = [...log.rejected];
@@ -86,6 +86,7 @@ function FillResult({ fill, decidedAt }: { fill: DecisionFill | null; decidedAt:
         <span className="text-xs tabular-nums text-slate-500 dark:text-slate-400">
           체결가 {formatMoney(fill.currency, fill.fill_price)}
           {fill.filled_at !== null && ` · ${sameDay ? formatTime(fill.filled_at) : formatDateTime(fill.filled_at)}`}
+          {fill.requested_quantity != null && ` · 잔액에 맞춰 ${formatInt(fill.quantity)}주만 체결`}
         </span>
       )}
     </>

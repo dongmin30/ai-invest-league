@@ -194,7 +194,8 @@ export interface Order {
   symbol: string;
   side: OrderSide;
   type: OrderType;
-  quantity: number;
+  quantity: number; // filled orders: the shares that filled
+  requested_quantity: number | null; // the ordered shares when a BUY filled for fewer (cash fell short at the fill price), else null
   limit_price: number | null;
   status: OrderStatus;
   reject_reason: string | null;
@@ -256,6 +257,7 @@ export interface DecisionFill {
   name: string;
   side: OrderSide;
   quantity: number;
+  requested_quantity: number | null; // see Order.requested_quantity
   status: OrderStatus;
   fill_price: number | null; // native currency of the symbol
   currency: Currency;

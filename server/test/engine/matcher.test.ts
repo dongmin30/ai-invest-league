@@ -198,11 +198,11 @@ describe('matchOrders: cash, holdings and fees (rule 2)', () => {
     const { participantId } = activeLeague();
     feed(quote(SAMSUNG, 70_000));
     const pendingBuy = buy(participantId, SAMSUNG, 10);
-    db.prepare('UPDATE participants SET cash = 100000 WHERE id = ?').run(participantId);
+    db.prepare('UPDATE participants SET cash = 60000 WHERE id = ?').run(participantId); // not even one share
     const [rejected] = tick(SAMSUNG, 70_000);
     expect(rejected).toMatchObject({ id: pendingBuy.id, status: 'rejected' });
     expect(rejected!.reject_reason).toBeTruthy();
-    expect(cashOf(participantId)).toBe(100_000);
+    expect(cashOf(participantId)).toBe(60_000);
 
     db.prepare('INSERT INTO holdings (participant_id, symbol, quantity, avg_price) VALUES (?, ?, 5, 70000)').run(
       participantId,
@@ -233,7 +233,7 @@ describe('matchOrders: cash reserved by other pending BUYs (rule 3)', () => {
 
   const HYNIX = '000660';
 
-  it('rejects a fill that would spend cash reserved for another pending BUY', () => {
+  it('cuts a fill down to the cash not reserved for another pending BUY', () => {
     const { participantId } = activeLeague('KR');
     db.prepare('UPDATE leagues SET max_position_pct = 1').run();
     feed(quote(SAMSUNG, 100_000), quote(HYNIX, 100_000));
@@ -242,15 +242,45 @@ describe('matchOrders: cash reserved by other pending BUYs (rule 3)', () => {
     expect(availableCash(participantId)).toBe(10_000_000 - 4_500_675 - 5_400_810);
 
     // A gap to 180,000 would cost 9,721,458: more than the 5,499,325 not held for the LIMIT order.
-    const [rejected] = tick(SAMSUNG, 180_000);
-    expect(rejected).toMatchObject({ id: market.id, status: 'rejected' });
-    expect(cashOf(participantId)).toBe(10_000_000);
-    expect(availableCash(participantId)).toBe(10_000_000 - 4_500_675);
+    // 30 shares (5,400,810) fit in it; 31 (5,580,837) do not.
+    const [cut] = tick(SAMSUNG, 180_000);
+    expect(cut).toMatchObject({ id: market.id, status: 'filled', quantity: 30, requested_quantity: 54, fee: 810 });
+    expect(cashOf(participantId)).toBe(10_000_000 - 5_400_810);
+    expect(availableCash(participantId)).toBe(10_000_000 - 5_400_810 - 4_500_675);
     expect(getOrderRow(limit.id)!.status).toBe('pending');
 
     // The LIMIT order keeps its reservation and still fills when it crosses.
     expect(tick(HYNIX, 89_000)).toMatchObject([{ id: limit.id, status: 'filled', fill_price: 89_000 }]);
     expect(availableCash(participantId)).toBeGreaterThanOrEqual(0);
+  });
+
+  it('fills an all-in MARKET BUY for the shares the cash covers when the price ticks up', () => {
+    const { participantId } = activeLeague('KR');
+    feed(quote(SAMSUNG, 100_000));
+    const allIn = buy(participantId, SAMSUNG, 99); // 9,901,485 of 10,000,000: a 100th share does not fit
+    // At 102,000 the 99 shares would cost 10,113,147; 97 cost 9,895,484 and 98 cost 9,997,499.
+    const [filled] = tick(SAMSUNG, 102_000);
+    expect(filled).toMatchObject({ id: allIn.id, status: 'filled', quantity: 98, requested_quantity: 99, fill_price: 102_000 });
+    expect(holding(participantId, SAMSUNG)).toEqual({ quantity: 98, avg_price: 102_000 });
+    expect(cashOf(participantId)).toBe(10_000_000 - 9_997_499);
+    expect(availableCash(participantId)).toBe(10_000_000 - 9_997_499);
+  });
+
+  it('keeps a share whose rounded cost is exactly the free cash', () => {
+    const { participantId } = activeLeague('KR');
+    feed(quote(SAMSUNG, 6_000));
+    const order = buy(participantId, SAMSUNG, 2);
+    db.prepare('UPDATE participants SET cash = 7001 WHERE id = ?').run(participantId);
+    // One share at 7,000 costs 7,000 + 1.05 fee, rounded to 7,001: 7001 / 7001.05 floors to 0.
+    expect(tick(SAMSUNG, 7_000)).toMatchObject([{ id: order.id, status: 'filled', quantity: 1, requested_quantity: 2 }]);
+    expect(cashOf(participantId)).toBe(0);
+  });
+
+  it('leaves requested_quantity empty when the whole order fills', () => {
+    const { participantId } = activeLeague('KR');
+    feed(quote(SAMSUNG, 100_000));
+    const order = buy(participantId, SAMSUNG, 10);
+    expect(tick(SAMSUNG, 102_000)).toMatchObject([{ id: order.id, status: 'filled', quantity: 10, requested_quantity: null }]);
   });
 
   it('lets a fill above its own reservation use cash that no other order holds', () => {

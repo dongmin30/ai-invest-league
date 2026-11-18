@@ -32,6 +32,7 @@ const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
   { table: 'leagues', column: 'fx_spread', definition: 'REAL NOT NULL DEFAULT 0' },
   { table: 'orders', column: 'ref_fx', definition: 'REAL' },
   { table: 'orders', column: 'fx_rate', definition: 'REAL' },
+  { table: 'orders', column: 'requested_quantity', definition: 'INTEGER' },
   { table: 'holdings', column: 'avg_fx', definition: 'REAL NOT NULL DEFAULT 1' },
   { table: 'snapshots', column: 'fx_rate', definition: 'REAL' },
 ];
