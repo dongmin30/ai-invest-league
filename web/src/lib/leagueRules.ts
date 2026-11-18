@@ -54,6 +54,3 @@ export const START_CASH_RANGE: Record<LeagueMarket, { min: number; max: number; 
 export const DURATION_MIN = 1;
 export const DURATION_MAX = 20;
 
-// Mirrors server engine/fees.ts OFFICIAL_JOIN_GRACE_MS: official leagues accept late joiners
-// for this long after they start.
-export const OFFICIAL_JOIN_GRACE_MS = 24 * 60 * 60 * 1000;

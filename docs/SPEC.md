@@ -143,9 +143,9 @@ CREATE TABLE IF NOT EXISTS orders (
   side TEXT NOT NULL CHECK (side IN ('BUY','SELL')),
   type TEXT NOT NULL CHECK (type IN ('MARKET','LIMIT')),
   quantity INTEGER NOT NULL CHECK (quantity > 0),
-  limit_price REAL,
   requested_quantity INTEGER,       -- set when a BUY filled for fewer shares than ordered (quantity = filled)
   ref_price REAL NOT NULL,          -- quote price at placement (for cash reservation)
+  limit_price REAL,
   ref_fx REAL,                      -- FX at placement for US orders in ALL leagues (BUY: spread-applied, reserves cash; SELL: mid)
   status TEXT NOT NULL CHECK (status IN ('pending','filled','canceled','rejected')),
   reject_reason TEXT,
@@ -269,7 +269,7 @@ CREATE TABLE IF NOT EXISTS official_series (
 - `engine/snapshots.ts`: `takeSnapshots(leagueId?)` — insert snapshot per participant (except those who left) of active leagues; ALL leagues also store the USD/KRW mid the equity used (`snapshots.fx_rate`, null without a rate); `getEquitySeries(leagueId, viewerParticipantId|null): EquitySeries[]` (top 10 humans + all AI + viewer).
 - `engine/leagues.ts`:
   - `createLeague(input: {name, market: LeagueMarket, type, duration_days?, start_cash?, is_public, owner_id|null, start_at?: number, agent_ids?: number[]}): LeagueSummary` — computes `start_at` (given or `nextLeagueOpen`), `end_at = addLeagueTradingDays(...)` (counted from `start_at` when `isLeagueOpen` then, else the next open), defaults from fees.ts (`LEAGUE_DEFAULTS[market]` incl. `fx_spread`, `typeDefaultsFor`), `invite_code` (6 chars, unique among unfinished leagues) for non-public; status `active` if start_at ≤ now else `recruiting`; joins given agents.
-  - `joinLeague(leagueId, {userId?|agentId?}, inviteCode?): number` (participant id) — per `isJoinable(league)`: while `recruiting`, while `active` for `custom` leagues, and for official leagues during the first 24 h after `start_at` (`OFFICIAL_JOIN_GRACE_MS` in fees.ts); errors `league_closed`, `already_joined`, `bad_invite`, `left_league` (the user forfeited this league; no rejoin).
+  - `joinLeague(leagueId, {userId?|agentId?}, inviteCode?): number` (participant id) — per `isJoinable(league)`: while `recruiting`, and while `active` before `end_at` (official and custom leagues alike; a late joiner starts with the full start cash); errors `league_closed`, `already_joined`, `bad_invite`, `left_league` (the user forfeited this league; no rejoin).
   - `leaveLeague(leagueId, userId): {forfeited: boolean}` — users only (AI participants never leave). `recruiting`: deletes the participant and its orders/holdings/snapshots (they may join again; `forfeited: false`). `active` before `end_at`: forfeit — cancels pending orders (`reject_reason` `리그에서 나가 취소되었습니다.`), sets `participants.left_at`, keeps holdings as they are (not liquidated); the participant drops out of rankings, averages, snapshots, `hasClosingQuotes`, `myDashboard`, `joined`/`my_participant_id`/`participant_count` (summary `left: true`), private-league visibility and `listLeagues`, and `placeOrder` refuses it (`participant_left`); `forfeited: true`. Emits `bus 'order'` for canceled orders and `'rankings'` for the league. Errors: `league_finished` (finished, or active past `end_at`), `not_joined`, `not_found`.
   - `countOpenOwnedLeagues(ownerId)` — unfinished leagues the user owns **and still takes part in** (a non-left participant); leaving frees a slot of the 3-league cap (`owner_id` stays, so the owner keeps seeing the league and its invite code). Creation stays bounded by the 10/hour/IP rate limit.
   - `joinLeagueByCode(userId, code): {league_id, participant_id}` — resolves the private league from its invite code (case-insensitive), then `joinLeague`; unknown code → `bad_invite`.

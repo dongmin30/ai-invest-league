@@ -28,7 +28,7 @@ import {
 } from '../market/calendar';
 import { getQuote } from '../market/quoteCache';
 import { getSymbol } from '../market/symbols';
-import { CUSTOM_MAX_DAYS, LEAGUE_DEFAULTS, OFFICIAL_JOIN_GRACE_MS, TYPE_DEFAULTS, roundMoney, typeDefaultsFor } from './fees';
+import { CUSTOM_MAX_DAYS, LEAGUE_DEFAULTS, TYPE_DEFAULTS, roundMoney, typeDefaultsFor } from './fees';
 import { EngineError } from './errors';
 import { computeRankings, leagueAverages } from './ranking';
 import { takeSnapshots } from './snapshots';
@@ -225,14 +225,12 @@ export function createLeague(input: CreateLeagueInput): LeagueSummary {
 }
 
 /**
- * Whether a league still accepts participants: while recruiting; while active for custom
- * leagues; and for official leagues during the first OFFICIAL_JOIN_GRACE_MS after start, so
- * a league that started while the market was open can still be joined.
+ * Whether a league still accepts participants: while recruiting, and while active until its
+ * end_at (official and custom leagues alike). A late joiner starts with the full start cash.
  */
 export function isJoinable(league: LeagueRow, at: number = now()): boolean {
   if (league.status === 'recruiting') return true;
-  if (league.status !== 'active' || at >= league.end_at) return false;
-  return league.type === 'custom' || at < league.start_at + OFFICIAL_JOIN_GRACE_MS;
+  return league.status === 'active' && at < league.end_at;
 }
 
 /** Public leagues are visible to everyone; private ones to their owner and (non-left) participants. */

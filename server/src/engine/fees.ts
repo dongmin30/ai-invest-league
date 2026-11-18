@@ -53,9 +53,6 @@ export function typeDefaultsFor(type: LeagueType, market: LeagueMarket): LeagueT
 
 export const CUSTOM_MAX_DAYS = 20;
 
-/** Official leagues stay open to late joiners for this long after start_at. */
-export const OFFICIAL_JOIN_GRACE_MS = 24 * 60 * 60 * 1000;
-
 const DECIMALS: Record<Currency, number> = { KRW: 0, USD: 2 };
 
 /** Rounds half away from zero to the currency's minor unit (KRW 0 decimals, USD 2). */

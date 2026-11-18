@@ -1,15 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import type { LeagueSummary } from '@shared/api-types';
 import { api, errorMessage } from '../api/client';
-import { OFFICIAL_JOIN_GRACE_MS } from '../lib/leagueRules';
 import { btn, cx, inputClass } from './ui';
 
 /** Mirrors server engine/leagues.ts isJoinable. */
 export function canJoin(league: LeagueSummary, at: number = Date.now()): boolean {
   if (league.joined || league.left) return false;
   if (league.status === 'recruiting') return true;
-  if (league.status !== 'active' || at >= league.end_at) return false;
-  return league.type === 'custom' || at < league.start_at + OFFICIAL_JOIN_GRACE_MS;
+  return league.status === 'active' && at < league.end_at;
 }
 
 /** Join button; private leagues ask for the 6-character invite code first. */

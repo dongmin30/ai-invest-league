@@ -157,7 +157,7 @@ describe('joinLeague', () => {
     expect(getLeagueSummary(official.id, userId)).toMatchObject({ joined: true, my_participant_id: pid });
   });
 
-  it('keeps official leagues open for 24 hours after start and custom leagues until finished', () => {
+  it('keeps official and custom leagues open to late joiners until they end', () => {
     const official = createLeague({ name: 'KR 3일', market: 'KR', type: '3d', is_public: true, owner_id: null });
     const customLeague = custom();
     setClock(KR_OPEN + MIN);
@@ -166,11 +166,15 @@ describe('joinLeague', () => {
     expect(joinLeague(official.id, { userId: makeUser() })).toBeGreaterThan(0);
     expect(joinLeague(customLeague.id, { userId: makeUser() })).toBeGreaterThan(0);
 
-    setClock(KR_OPEN + DAY - MIN);
+    const officialEnd = getLeagueRow(official.id)!.end_at;
+    expect(officialEnd).toBeGreaterThan(KR_OPEN + DAY);
+    setClock(officialEnd - MIN); // long past the first day
     expect(joinLeague(official.id, { userId: makeUser() })).toBeGreaterThan(0);
-    setClock(KR_OPEN + DAY);
-    expectCode(() => joinLeague(official.id, { userId: makeUser() }), 'league_closed');
     expect(joinLeague(customLeague.id, { userId: makeUser() })).toBeGreaterThan(0);
+    // At end_at the league is still 'active' (awaiting the closing print) but no longer joinable.
+    setClock(officialEnd);
+    expect(getLeagueRow(official.id)!.status).toBe('active');
+    expectCode(() => joinLeague(official.id, { userId: makeUser() }), 'league_closed');
 
     setClock(KR_CLOSE + 3 * DAY);
     updateLeagueStatuses();
